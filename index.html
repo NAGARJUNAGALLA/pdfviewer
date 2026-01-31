@@ -3,64 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HD Content Presenter</title>
+    <title>HD Content Presenter Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
-        :root { --toolbar-w: 75px; --accent: #3498db; }
+        :root { --toolbar-w: 80px; --accent: #3498db; }
         * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; background: #000; color: white; font-family: sans-serif; height: 100vh; display: flex; overflow: hidden; }
 
         /* Content Area */
-        #viewport { flex-grow: 1; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; position: relative; }
+        #viewport { flex-grow: 1; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 15px; position: relative; }
         
         #record-zone { 
             position: relative; width: 100%; max-width: 1200px; 
             aspect-ratio: 16 / 9; background: #fff; 
-            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            box-shadow: 0 0 50px rgba(0,0,0,0.9);
+            overflow: hidden;
         }
-        /* Layers */
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         #draw-layer { z-index: 50; cursor: crosshair; }
         #pdf-layer { z-index: 10; }
-        #recorder-canvas { display: none; } /* Hidden Master Canvas for Recording */
+        #recorder-canvas { display: none; } 
 
-        /* Scrollable Toolbar */
-        #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #1a1a1a; border-left: 1px solid #333; flex-shrink: 0; }
+        /* Scrollable Sidebar */
+        #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #151515; border-left: 1px solid #333; flex-shrink: 0; }
         #toolbar-scroll { 
             height: 100%; overflow-y: auto; display: flex; 
-            flex-direction: column; align-items: center; padding: 20px 0; gap: 20px; 
+            flex-direction: column; align-items: center; padding: 20px 0; gap: 18px; 
             touch-action: pan-y;
         }
         #toolbar-scroll::-webkit-scrollbar { width: 0px; }
 
         .tool-btn {
-            background: #252525; border: 1px solid #444; color: #999;
+            background: #2a2a2a; border: 1px solid #444; color: #bbb;
             min-height: 52px; width: 52px; display: flex; align-items: center;
-            justify-content: center; border-radius: 12px; cursor: pointer; font-size: 20px;
-            flex-shrink: 0;
+            justify-content: center; border-radius: 14px; cursor: pointer; font-size: 20px;
+            flex-shrink: 0; transition: all 0.2s;
         }
-        .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+        .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); transform: scale(1.05); }
         
-        #page-num { font-size: 12px; font-weight: bold; color: #777; }
+        #page-num { font-size: 12px; font-weight: bold; color: #888; margin: -5px 0; }
+        
+        /* Color Presets */
+        .color-circle { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #444; cursor: pointer; flex-shrink: 0; }
         input[type="color"] { border: none; width: 40px; height: 40px; background: none; cursor: pointer; }
-        input[type="range"] { width: 50px; cursor: pointer; }
+        input[type="range"] { width: 55px; cursor: pointer; }
 
         #upload-screen {
-            position: fixed; inset: 0; background: #111; z-index: 1000;
+            position: fixed; inset: 0; background: #0b0b0b; z-index: 1000;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
-        #rec-indicator { position: absolute; top: 15px; left: 15px; color: #ff4757; font-size: 14px; font-weight: bold; display: none; z-index: 100; }
+        #rec-indicator { position: absolute; top: 20px; left: 20px; color: #ff4757; font-size: 14px; font-weight: bold; display: none; z-index: 100; text-shadow: 0 0 10px rgba(255,0,0,0.5); }
+        .label { font-size: 9px; color: #666; font-weight: bold; margin-bottom: -12px; text-transform: uppercase; }
     </style>
 </head>
 <body>
 
-<div id="rec-indicator"><i class="fas fa-circle"></i> REC</div>
+<div id="rec-indicator"><i class="fas fa-circle"></i> RECORDING...</div>
 
 <div id="upload-screen">
-    <i class="fas fa-file-pdf fa-4x" style="color:var(--accent); margin-bottom: 20px;"></i>
+    <i class="fas fa-file-pdf fa-5x" style="color:var(--accent); margin-bottom: 25px;"></i>
     <input type="file" id="file-input" accept=".pdf">
-    <p>Upload PDF to Start Fullscreen Presentation</p>
+    <p style="color: #888;">Select PDF to begin presentation</p>
 </div>
 
 <div id="viewport">
@@ -76,15 +80,31 @@
         <button class="tool-btn" onclick="navPage(-1)"><i class="fas fa-chevron-up"></i></button>
         <span id="page-num">0/0</span>
         <button class="tool-btn" onclick="navPage(1)"><i class="fas fa-chevron-down"></i></button>
-        <hr width="30" style="opacity:0.1">
+        
+        <hr width="40" style="opacity:0.1">
+        
         <button class="tool-btn active" id="pen-btn" onclick="setTool('pen')"><i class="fas fa-pen-nib"></i></button>
         <button class="tool-btn" id="eraser-btn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
-        <input type="color" id="color-picker" value="#ff0000">
-        <input type="range" id="size-slider" min="1" max="50" value="5">
-        <hr width="30" style="opacity:0.1">
+        
+        <div class="label">Ink Color</div>
+        <div class="color-circle" style="background: #ff0000;" onclick="pickColor('#ff0000')"></div>
+        <div class="color-circle" style="background: #00ff00;" onclick="pickColor('#00ff00')"></div>
+        <div class="color-circle" style="background: #ffffff;" onclick="pickColor('#ffffff')"></div>
+        <input type="color" id="color-picker" value="#ff0000" onchange="pickColor(this.value)">
+        
+        <div class="label">Size</div>
+        <input type="range" id="size-slider" min="1" max="60" value="6">
+        
+        <hr width="40" style="opacity:0.1">
+        
         <button class="tool-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
-        <button class="tool-btn" onclick="clearDraw()"><i class="fas fa-trash"></i></button>
-        <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-video"></i></button>
+        <button class="tool-btn" onclick="clearDraw()"><i class="fas fa-trash-can"></i></button>
+        
+        <div class="label">REC</div>
+        <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-microphone"></i></button>
+        
+        <div class="label">FS</div>
+        <button class="tool-btn" id="fs-btn" onclick="toggleFullscreen()"><i class="fas fa-expand"></i></button>
     </div>
 </div>
 
@@ -102,43 +122,54 @@
     const recCanvas = document.getElementById('recorder-canvas');
     const rCtx = recCanvas.getContext('2d');
 
-    // 1. FULLSCREEN & LOAD
+    // 1. FILE LOAD & SETUP
     document.getElementById('file-input').onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
-        // Forced Fullscreen
-        const docEl = document.documentElement;
-        if (docEl.requestFullscreen) docEl.requestFullscreen();
-        else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
-
         document.getElementById('upload-screen').style.display = 'none';
         const buffer = await file.arrayBuffer();
         pdfDoc = await pdfjsLib.getDocument(buffer).promise;
         renderPage();
     };
 
+    function toggleFullscreen() {
+        const btn = document.getElementById('fs-btn');
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {});
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                btn.innerHTML = '<i class="fas fa-expand"></i>';
+            }
+        }
+    }
+
     async function renderPage() {
         const page = await pdfDoc.getPage(pageNum);
         const container = document.getElementById('record-zone');
         const rect = container.getBoundingClientRect();
         
-        const dpr = (window.devicePixelRatio || 1) * 2.5; // HD Quality
+        // HD Fixed Scaling Logic (Resets Zoom)
+        const dpr = (window.devicePixelRatio || 1) * 2.5; 
         pdfCanvas.width = drawCanvas.width = recCanvas.width = rect.width * dpr;
         pdfCanvas.height = drawCanvas.height = recCanvas.height = rect.height * dpr;
 
-        const viewport = page.getViewport({ scale: pdfCanvas.width / page.getViewport({scale:1}).width });
-        await page.render({ canvasContext: pCtx, viewport }).promise;
+        // Force viewport to fit exactly within canvas width
+        const viewport = page.getViewport({ scale: pdfCanvas.width / page.getViewport({scale: 1}).width });
+        
+        await page.render({ canvasContext: pCtx, viewport: viewport }).promise;
         document.getElementById('page-num').innerText = `${pageNum}/${pdfDoc.numPages}`;
-        clearDraw();
+        
+        clearDraw(); // Reset drawing on page change
         updateRecorderCanvas();
     }
 
-    // 2. SMOOTH WRITING
+    // 2. HD SMOOTH WRITING
     function getPos(e) {
         const rect = drawCanvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+        const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
         return {
             x: (clientX - rect.left) * (drawCanvas.width / rect.width),
             y: (clientY - rect.top) * (drawCanvas.height / rect.height)
@@ -153,7 +184,7 @@
 
     const drawMove = (e) => {
         if (!isDrawing) return;
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
         const pos = getPos(e);
         points.push(pos);
 
@@ -194,6 +225,11 @@
         renderPage();
     }
 
+    function pickColor(color) {
+        document.getElementById('color-picker').value = color;
+        setTool('pen');
+    }
+
     function setTool(t) {
         currentTool = t;
         document.getElementById('pen-btn').classList.toggle('active', t === 'pen');
@@ -209,7 +245,7 @@
     }
     function clearDraw() { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); historyStack = []; updateRecorderCanvas(); }
 
-    // 3. CONTENT RECORDING (PDF + Ink + Audio)
+    // 3. UNIFIED RECORDING
     let recorder, chunks = [];
     async function toggleRecording() {
         const btn = document.getElementById('rec-btn');
@@ -217,33 +253,32 @@
 
         if (recorder && recorder.state === 'recording') {
             recorder.stop();
-            btn.style.color = "#ff4757";
+            btn.classList.remove('active');
             indicator.style.display = 'none';
             return;
         }
 
         try {
-            const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // Record from the "Hidden Master Canvas" that merges both layers
-            const stream = recCanvas.captureStream(30);
-            const combined = new MediaStream([...stream.getTracks(), ...audio.getTracks()]);
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const videoStream = recCanvas.captureStream(30);
+            const combined = new MediaStream([...videoStream.getTracks(), ...audioStream.getTracks()]);
 
-            recorder = new MediaRecorder(combined, { mimeType: 'video/webm' });
+            recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp9' });
             chunks = [];
             recorder.ondataavailable = e => chunks.push(e.data);
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: 'video/webm' });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
-                a.download = 'presentation_hd.webm';
+                a.download = `HD_Presentation_${Date.now()}.webm`;
                 a.click();
-                audio.getTracks().forEach(t => t.stop());
+                audioStream.getTracks().forEach(t => t.stop());
             };
             recorder.start();
-            btn.style.color = "#2ecc71";
+            btn.classList.add('active');
             indicator.style.display = 'block';
         } catch (e) {
-            alert("Recording requires Microphone access and a browser that supports captureStream.");
+            alert("Recording Error: Ensure you have granted Microphone permissions.");
         }
     }
 </script>
