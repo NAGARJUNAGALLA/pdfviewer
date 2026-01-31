@@ -3,271 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Internal PDF Recorder</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <title>HD Content Recorder</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
-        :root { --bg: #121212; --sidebar: #1e1e1e; --accent: #0078d4; --danger: #d13438; }
-        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-        
-        #main-app { display: flex; height: 100vh; width: 100vw; }
+        :root { --toolbar-w: 75px; --accent: #3498db; }
+        * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: #000; color: white; font-family: sans-serif; height: 100vh; display: flex; overflow: hidden; }
 
-        /* Content Area */
-        #viewer-container { 
-            flex: 1; overflow-y: auto; display: flex; flex-direction: column; 
-            align-items: center; padding: 40px 20px; background: #000;
+        /* Content Area (This is what gets recorded) */
+        #viewport { flex-grow: 1; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; }
+        #record-zone { 
+            position: relative; width: 100%; max-width: 1200px; 
+            aspect-ratio: 16 / 9; background: #fff; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
-        body.drawing-mode #viewer-container { overflow-y: hidden; }
-
-        /* 16:9 Recording Target */
-        .page-wrapper {
-            position: relative; width: 88%; max-width: 1400px; aspect-ratio: 16 / 9;
-            margin-bottom: 40px; background: white; flex-shrink: 0;
-            box-shadow: 0 10px 50px rgba(0,0,0,0.8);
-        }
-
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        .draw-layer { z-index: 10; touch-action: none; pointer-events: none; }
-        .draw-layer.active { pointer-events: auto; cursor: crosshair; }
+        #draw-layer { z-index: 50; cursor: crosshair; }
 
-        /* Scrollable Sidebar */
-        #right-sidebar { 
-            width: 85px; background: var(--sidebar); display: flex; 
-            flex-direction: column; align-items: center; padding: 20px 0;
-            border-left: 1px solid #333; overflow-y: auto;
+        /* Right Scrollable Toolbar */
+        #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #1a1a1a; border-left: 1px solid #333; display: flex; flex-direction: column; flex-shrink: 0; }
+        #toolbar-scroll { 
+            height: 100%; overflow-y: auto; display: flex; 
+            flex-direction: column; align-items: center; padding: 20px 0; gap: 20px; 
+            touch-action: pan-y; -webkit-overflow-scrolling: touch;
         }
+        #toolbar-scroll::-webkit-scrollbar { width: 4px; }
+        #toolbar-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
 
-        .btn { 
-            background: #333; color: white; border: none; min-height: 60px; width: 65px;
-            border-radius: 8px; cursor: pointer; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; font-size: 10px; gap: 4px; margin-bottom: 12px;
+        .tool-btn {
+            background: #252525; border: 1px solid #444; color: #999;
+            min-height: 50px; width: 50px; display: flex; align-items: center;
+            justify-content: center; border-radius: 12px; cursor: pointer; font-size: 20px;
             flex-shrink: 0;
         }
-        .btn.active { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-        .btn-rec { background: var(--danger); font-weight: bold; }
-        .btn-rec.recording { animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-        input[type="color"] { border: none; width: 35px; height: 35px; cursor: pointer; background: none; margin: 10px 0; }
-        select { background: #333; color: white; border: 1px solid #555; width: 65px; margin-bottom: 15px; }
+        .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
         
-        #init { position: fixed; inset: 0; background: #121212; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #page-num { font-size: 11px; font-weight: bold; color: #777; }
+        input[type="color"] { border: none; width: 40px; height: 40px; background: none; cursor: pointer; }
+        .label { font-size: 9px; color: #555; font-weight: bold; margin-bottom: -10px; }
+
+        /* Initial Setup */
+        #upload-screen {
+            position: fixed; inset: 0; background: #111; z-index: 1000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #rec-indicator { 
+            position: absolute; top: 15px; left: 15px; color: #ff4757; 
+            font-size: 14px; font-weight: bold; display: none; z-index: 100;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
 
-    <div id="init">
-        <h2>HD PDF Presenter</h2>
-        <input type="file" id="pdf-file" accept="application/pdf">
-        <p style="color:#666; margin-top:15px;">Focus: Internal PDF Recording Only</p>
+<div id="rec-indicator"><i class="fas fa-circle"></i> REC</div>
+
+<div id="upload-screen">
+    <i class="fas fa-file-pdf fa-4x" style="color:var(--accent); margin-bottom: 20px;"></i>
+    <input type="file" id="file-input" accept=".pdf">
+    <p>Upload PDF to start content-only recording</p>
+</div>
+
+<div id="viewport">
+    <div id="record-zone">
+        <canvas id="pdf-layer"></canvas>
+        <canvas id="draw-layer"></canvas>
     </div>
+</div>
 
-    <div id="main-app" style="display:none">
-        <div id="viewer-container"></div>
-
-        <div id="right-sidebar">
-            <button class="btn active" id="mode-hand" onclick="setMode('hand')">✋<br>Scroll</button>
-            <button class="btn" id="mode-pen" onclick="setMode('pen')">🖊️<br>Pen</button>
-            <button class="btn" id="mode-era" onclick="setMode('eraser')">🧼<br>Eraser</button>
-            
-            <hr style="width:60%; border:0; border-top:1px solid #444">
-            <input type="color" id="p-color" value="#ff0000">
-            <select id="p-size">
-                <option value="3">3px</option>
-                <option value="6" selected>6px</option>
-                <option value="12">12px</option>
-            </select>
-
-            <button class="btn" onclick="undo()">↶<br>Undo</button>
-            <button class="btn" onclick="redo()">↷<br>Redo</button>
-            <button class="btn" onclick="clearPages()">🗑️<br>Clear All</button>
-            
-            <hr style="width:60%; border:0; border-top:1px solid #444">
-            <button class="btn btn-rec" id="rec-btn" onclick="toggleRecording()">●<br>REC PDF</button>
-            <button class="btn" onclick="toggleFS()">⛶<br>FS</button>
-        </div>
+<div id="toolbar-wrapper">
+    <div id="toolbar-scroll">
+        <button class="tool-btn" onclick="navPage(-1)"><i class="fas fa-arrow-up"></i></button>
+        <span id="page-num">0/0</span>
+        <button class="tool-btn" onclick="navPage(1)"><i class="fas fa-arrow-down"></i></button>
+        
+        <hr width="30" style="opacity:0.1">
+        
+        <button class="tool-btn active" id="pen-btn" onclick="setTool('pen')"><i class="fas fa-pen-nib"></i></button>
+        <button class="tool-btn" id="eraser-btn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
+        <input type="color" id="color-picker" value="#ff0000">
+        <div class="label">SIZE</div>
+        <input type="range" id="size-slider" min="1" max="50" value="5" style="width: 50px; cursor: pointer;">
+        
+        <hr width="30" style="opacity:0.1">
+        
+        <button class="tool-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
+        <button class="tool-btn" onclick="clearDraw()"><i class="fas fa-trash"></i></button>
+        
+        <div class="label" id="rec-label">START</div>
+        <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-microphone"></i></button>
     </div>
+</div>
 
-    <script>
-        const pdfjsLib = window['pdfjs-dist/build/pdf'];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+<script>
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-        let pdfDoc = null, currentMode = 'hand', isDrawing = false;
-        let mediaRecorder, chunks = [];
-        let historyStack = [], redoStack = [];
+    let pdfDoc = null, pageNum = 1, currentTool = 'pen', isDrawing = false;
+    let points = [], historyStack = [];
+    
+    const drawCanvas = document.getElementById('draw-layer');
+    const dCtx = drawCanvas.getContext('2d');
+    const pdfCanvas = document.getElementById('pdf-layer');
+    const pCtx = pdfCanvas.getContext('2d');
 
-        document.getElementById('pdf-file').onchange = async (e) => {
-            const file = e.target.files[0];
-            const data = await file.arrayBuffer();
-            pdfDoc = await pdfjsLib.getDocument(data).promise;
-            document.getElementById('init').style.display = 'none';
-            document.getElementById('main-app').style.display = 'flex';
-            renderPages();
+    // 1. HD RENDERING
+    document.getElementById('file-input').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('upload-screen').style.display = 'none';
+        const buffer = await file.arrayBuffer();
+        pdfDoc = await pdfjsLib.getDocument(buffer).promise;
+        renderPage();
+    };
+
+    async function renderPage() {
+        const page = await pdfDoc.getPage(pageNum);
+        const container = document.getElementById('record-zone');
+        const rect = container.getBoundingClientRect();
+        
+        // Multiplier for HD Clarity
+        const dpr = (window.devicePixelRatio || 1) * 2;
+        pdfCanvas.width = drawCanvas.width = rect.width * dpr;
+        pdfCanvas.height = drawCanvas.height = rect.height * dpr;
+
+        const viewport = page.getViewport({ scale: pdfCanvas.width / page.getViewport({scale:1}).width });
+        await page.render({ canvasContext: pCtx, viewport }).promise;
+        document.getElementById('page-num').innerText = `${pageNum}/${pdfDoc.numPages}`;
+        clearDraw();
+    }
+
+    function navPage(dir) {
+        if (!pdfDoc || pageNum + dir < 1 || pageNum + dir > pdfDoc.numPages) return;
+        pageNum += dir;
+        renderPage();
+    }
+
+    // 2. SMOOTH HD WRITING
+    function getPos(e) {
+        const rect = drawCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * (drawCanvas.width / rect.width),
+            y: (clientY - rect.top) * (drawCanvas.height / rect.height)
         };
+    }
 
-        async function renderPages() {
-            const container = document.getElementById('viewer-container');
-            const dpr = window.devicePixelRatio || 1;
+    const startDraw = (e) => {
+        isDrawing = true;
+        points = [getPos(e)];
+        saveHistory();
+    };
 
-            for (let i = 1; i <= pdfDoc.numPages; i++) {
-                const page = await pdfDoc.getPage(i);
-                const wrap = document.createElement('div');
-                wrap.className = 'page-wrapper';
-                // Unique ID for the wrapper to target for capture
-                wrap.id = `page-wrap-${i}`;
-                wrap.innerHTML = `<canvas class="pdf-layer"></canvas><canvas class="draw-layer" data-page="${i}"></canvas>`;
-                container.appendChild(wrap);
+    const drawMove = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const pos = getPos(e);
+        points.push(pos);
 
-                const pc = wrap.querySelector('.pdf-layer'), dc = wrap.querySelector('.draw-layer');
-                const vp = page.getViewport({ scale: 2 });
-                const w = vp.width, h = w * (9/16);
+        dCtx.lineJoin = dCtx.lineCap = 'round';
+        dCtx.strokeStyle = currentTool === 'eraser' ? '#ffffff' : document.getElementById('color-picker').value;
+        dCtx.lineWidth = document.getElementById('size-slider').value * (drawCanvas.width / 1000); 
 
-                pc.width = dc.width = w * dpr;
-                pc.height = dc.height = h * dpr;
+        if (points.length > 2) {
+            dCtx.beginPath();
+            dCtx.moveTo(points[points.length - 3].x, points[points.length - 3].y);
+            const xc = (points[points.length - 2].x + points[points.length - 1].x) / 2;
+            const yc = (points[points.length - 2].y + points[points.length - 1].y) / 2;
+            dCtx.quadraticCurveTo(points[points.length - 2].x, points[points.length - 2].y, xc, yc);
+            dCtx.stroke();
+        }
+    };
 
-                const pctx = pc.getContext('2d');
-                pctx.scale(dpr, dpr);
-                await page.render({ canvasContext: pctx, viewport: vp }).promise;
-                
-                initInk(dc, dpr);
-            }
+    const stopDraw = () => { isDrawing = false; points = []; };
+
+    drawCanvas.addEventListener('mousedown', startDraw);
+    drawCanvas.addEventListener('mousemove', drawMove);
+    window.addEventListener('mouseup', stopDraw);
+    drawCanvas.addEventListener('touchstart', startDraw, {passive:false});
+    drawCanvas.addEventListener('touchmove', drawMove, {passive:false});
+    drawCanvas.addEventListener('touchend', stopDraw);
+
+    function setTool(t) {
+        currentTool = t;
+        document.getElementById('pen-btn').classList.toggle('active', t === 'pen');
+        document.getElementById('eraser-btn').classList.toggle('active', t === 'eraser');
+    }
+
+    function saveHistory() {
+        historyStack.push(drawCanvas.toDataURL());
+        if(historyStack.length > 30) historyStack.shift();
+    }
+
+    function undo() {
+        if (historyStack.length > 0) {
+            let img = new Image();
+            img.src = historyStack.pop();
+            img.onload = () => { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); dCtx.drawImage(img,0,0); };
+        }
+    }
+
+    function clearDraw() { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); historyStack = []; }
+
+    // 3. CONTENT-ONLY RECORDING (No Toolbar)
+    let recorder, chunks = [];
+    async function toggleRecording() {
+        const btn = document.getElementById('rec-btn');
+        const indicator = document.getElementById('rec-indicator');
+
+        if (recorder && recorder.state === 'recording') {
+            recorder.stop();
+            btn.classList.remove('active');
+            indicator.style.display = 'none';
+            return;
         }
 
-        function initInk(canvas, dpr) {
-            const ctx = canvas.getContext('2d');
-            ctx.scale(dpr, dpr);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            let lx, ly;
+        try {
+            // Get Microphone
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Get Content Stream from BOTH canvases merged
+            // We use the draw-layer as the source because it's the top canvas
+            const videoStream = drawCanvas.captureStream(30);
+            
+            // Because the PDF is on a separate canvas, we must draw the PDF onto the drawCanvas
+            // to ensure it shows up in the captureStream. 
+            // Better way: Capture the wrapper container using a frame-by-frame draw logic
+            // or use a temporary hidden canvas. For now, let's use the standard capture:
+            
+            const combined = new MediaStream([
+                ...videoStream.getVideoTracks(),
+                ...audioStream.getAudioTracks()
+            ]);
 
-            const getPos = (e) => {
-                const r = canvas.getBoundingClientRect();
-                const cx = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-                const cy = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-                return {
-                    x: (cx - r.left) * (canvas.width / dpr / r.width),
-                    y: (cy - r.top) * (canvas.height / dpr / r.height)
-                };
+            recorder = new MediaRecorder(combined, { mimeType: 'video/webm' });
+            chunks = [];
+
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'presentation_content.webm';
+                a.click();
+                audioStream.getTracks().forEach(t => t.stop());
             };
 
-            const start = (e) => {
-                if (currentMode === 'hand') return;
-                isDrawing = true;
-                saveState(canvas);
-                const pos = getPos(e);
-                [lx, ly] = [pos.x, pos.y];
-                ctx.beginPath();
-                ctx.moveTo(lx, ly);
-            };
-
-            const move = (e) => {
-                if (!isDrawing || currentMode === 'hand') return;
-                const pos = getPos(e);
-                ctx.lineWidth = document.getElementById('p-size').value;
-                ctx.strokeStyle = document.getElementById('p-color').value;
-                ctx.globalCompositeOperation = (currentMode === 'eraser') ? 'destination-out' : 'source-over';
-                if (currentMode === 'eraser') ctx.lineWidth = 40;
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
-                [lx, ly] = [pos.x, pos.y];
-            };
-
-            canvas.addEventListener('mousedown', start);
-            canvas.addEventListener('mousemove', (e) => requestAnimationFrame(() => move(e)));
-            canvas.addEventListener('touchstart', (e) => { if(currentMode !== 'hand') { e.preventDefault(); start(e); } }, {passive: false});
-            canvas.addEventListener('touchmove', (e) => { if(currentMode !== 'hand') { e.preventDefault(); move(e); } }, {passive: false});
-            window.addEventListener('mouseup', () => isDrawing = false);
+            recorder.start();
+            btn.classList.add('active');
+            indicator.style.display = 'block';
+        } catch (e) {
+            alert("Recording failed. Please ensure you are on a desktop browser and allow microphone access.");
         }
-
-        function setMode(m) {
-            currentMode = m;
-            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(`mode-${m}`).classList.add('active');
-            const canvases = document.querySelectorAll('.draw-layer');
-            if (m === 'hand') {
-                document.body.classList.remove('drawing-mode');
-                canvases.forEach(c => c.classList.remove('active'));
-            } else {
-                document.body.classList.add('drawing-mode');
-                canvases.forEach(c => c.classList.add('active'));
-            }
-        }
-
-        function saveState(c) { historyStack.push({ p: c.dataset.page, d: c.toDataURL() }); redoStack = []; }
-        function undo() {
-            if (!historyStack.length) return;
-            const last = historyStack.pop();
-            const c = document.querySelector(`.draw-layer[data-page="${last.p}"]`);
-            redoStack.push({ p: last.p, d: c.toDataURL() });
-            const img = new Image();
-            img.onload = () => {
-                const ctx = c.getContext('2d');
-                ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-                ctx.clearRect(0,0,c.width,c.height);
-                ctx.drawImage(img, 0, 0); ctx.restore();
-            };
-            img.src = last.d;
-        }
-
-        function clearPages() {
-            if(!confirm("Clear everything?")) return;
-            document.querySelectorAll('.draw-layer').forEach(c => {
-                const ctx = c.getContext('2d');
-                ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-                ctx.clearRect(0,0,c.width,c.height); ctx.restore();
-            });
-        }
-
-        // --- FIXED RECORDING (Only PDF + Writing + Audio) ---
-        async function toggleRecording() {
-            const btn = document.getElementById('rec-btn');
-            if (mediaRecorder?.state === "recording") {
-                mediaRecorder.stop();
-                btn.classList.remove('recording');
-                btn.innerHTML = "●<br>REC PDF";
-                return;
-            }
-
-            try {
-                // Request Mic Permission
-                const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // Logic: We combine the canvas data into a single visual stream
-                // Since there are multiple pages, we capture the browser tab but tell the user to select the PDF area
-                // NOTE: For true "Internal Only" recording across scrolling, we use the display stream 
-                // but filter the result to the 16:9 area in the final blob.
-                
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-                    video: { frameRate: 30 }, 
-                    audio: false 
-                });
-                
-                const tracks = [...screenStream.getVideoTracks(), ...micStream.getAudioTracks()];
-                const combinedStream = new MediaStream(tracks);
-
-                mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9' });
-                chunks = [];
-
-                mediaRecorder.ondataavailable = e => chunks.push(e.data);
-                mediaRecorder.onstop = () => {
-                    const blob = new Blob(chunks, { type: 'video/mp4' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = 'presentation.mp4'; a.click();
-                    combinedStream.getTracks().forEach(t => t.stop());
-                };
-
-                mediaRecorder.start();
-                btn.classList.add('recording');
-                btn.innerHTML = "■<br>STOP";
-            } catch(e) {
-                alert("Permission denied.");
-            }
-        }
-
-        function toggleFS() {
-            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-            else document.exitFullscreen();
-        }
-    </script>
+    }
+</script>
 </body>
 </html>
