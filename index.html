@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro HD PDF Annotator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root { --bg: #2d2d2d; --sidebar: #1e1e1e; --accent: #0078d4; --danger: #d13438; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        
+        #main-app { display: flex; height: 100vh; width: 100vw; }
+
+        /* Scrollable Area */
+        #viewer-container { 
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column; 
+            align-items: center; padding: 40px 20px; background: var(--bg);
+            scroll-behavior: smooth;
+        }
+        body.drawing-mode #viewer-container { overflow-y: hidden; }
+
+        /* 16:9 Frame */
+        .page-wrapper {
+            position: relative; width: 90%; max-width: 1200px; aspect-ratio: 16 / 9;
+            margin-bottom: 40px; background: white; flex-shrink: 0;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+        }
+
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .pdf-layer { z-index: 1; }
+        .draw-layer { z-index: 10; touch-action: none; pointer-events: none; }
+        .draw-layer.active { pointer-events: auto; cursor: crosshair; }
+
+        /* Right Sidebar Toolbar */
+        #right-sidebar { 
+            width: 75px; background: var(--sidebar); display: flex; 
+            flex-direction: column; align-items: center; gap: 12px; padding: 15px 0;
+            border-left: 1px solid #444; z-index: 1000;
+        }
+
+        .btn { 
+            background: #3b3b3b; color: white; border: none; width: 55px; height: 50px;
+            border-radius: 6px; cursor: pointer; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; font-size: 11px; gap: 4px;
+        }
+        .btn i { font-style: normal; font-size: 18px; }
+        .btn:hover { background: #4a4a4a; }
+        .btn.active { background: var(--accent); }
+        .btn-rec { background: var(--danger); }
+        .btn-rec.recording { animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        input[type="color"] { border: none; width: 35px; height: 35px; cursor: pointer; background: none; }
+        select { width: 60px; background: #333; color: white; border: 1px solid #555; }
+        
+        #loader { position: fixed; inset: 0; background: #1e1e1e; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <h2 style="margin-bottom:20px;">HD PDF Presenter</h2>
+        <input type="file" id="file-selector" accept="application/pdf">
+        <p style="color:#888; margin-top:15px;">Upload a PDF to start 16:9 Annotator</p>
+    </div>
+
+    <div id="main-app" style="display:none">
+        <div id="viewer-container"></div>
+
+        <div id="right-sidebar">
+            <button class="btn active" id="hand-tool" onclick="switchMode('hand')"><i>✋</i>Hand</button>
+            <button class="btn" id="pen-tool" onclick="switchMode('pen')"><i>🖊️</i>Pen</button>
+            <button class="btn" id="era-tool" onclick="switchMode('eraser')"><i>🧼</i>Eraser</button>
+            
+            <hr style="width:60%; border:0; border-top:1px solid #444">
+            
+            <input type="color" id="p-color" value="#ff0000" title="Pen Color">
+            <select id="p-size" title="Pen Size">
+                <option value="3">Fine</option>
+                <option value="7" selected>Med</option>
+                <option value="15">Bold</option>
+            </select>
+
+            <hr style="width:60%; border:0; border-top:1px solid #444">
+
+            <button class="btn" onclick="undo()"><i>↶</i>Undo</button>
+            <button class="btn" onclick="redo()"><i>↷</i>Redo</button>
+            <button class="btn" onclick="clearContent()" style="color:#ff8c00"><i>🗑️</i>Clear</button>
+            
+            <hr style="width:60%; border:0; border-top:1px solid #444">
+
+            <button class="btn btn-rec" id="rec-btn" onclick="handleRecording()"><i>●</i>REC</button>
+            <button class="btn" onclick="toggleFS()"><i>⛶</i>FS</button>
+        </div>
+    </div>
+
+    <script>
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null, currentMode = 'hand', isDrawing = false;
+        let mediaRecorder, chunks = [];
+        let history = [], redoList = [];
+
+        // 1. File Initialization
+        document.getElementById('file-selector').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const data = await file.arrayBuffer();
+            pdfDoc = await pdfjsLib.getDocument(data).promise;
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('main-app').style.display = 'flex';
+            renderPDF();
+        };
+
+        // 2. High Resolution Rendering
+        async function renderPDF() {
+            const container = document.getElementById('viewer-container');
+            const dpr = window.devicePixelRatio || 1;
+
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                const wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper';
+                wrapper.innerHTML = `<canvas class="pdf-layer"></canvas><canvas class="draw-layer" data-page="${i}"></canvas>`;
+                container.appendChild(wrapper);
+
+                const pCanvas = wrapper.querySelector('.pdf-layer');
+                const dCanvas = wrapper.querySelector('.draw-layer');
+                
+                const viewport = page.getViewport({ scale: 2 }); // Render at 2x scale for HD
+                const width = viewport.width;
+                const height = width * (9/16);
+
+                pCanvas.width = dCanvas.width = width * dpr;
+                pCanvas.height = dCanvas.height = height * dpr;
+
+                const pctx = pCanvas.getContext('2d');
+                pctx.scale(dpr, dpr);
+                await page.render({ canvasContext: pctx, viewport }).promise;
+                
+                initInk(dCanvas, dpr);
+            }
+        }
+
+        // 3. Precise Ink Engine
+        function initInk(canvas, dpr) {
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                
+                // Scale factor between CSS and Internal Canvas
+                return {
+                    x: (clientX - rect.left) * (canvas.width / dpr / rect.width),
+                    y: (clientY - rect.top) * (canvas.height / dpr / rect.height)
+                };
+            };
+
+            const start = (e) => {
+                if (currentMode === 'hand') return;
+                saveHistory(canvas);
+                isDrawing = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            };
+
+            const move = (e) => {
+                if (!isDrawing || currentMode === 'hand') return;
+                const pos = getPos(e);
+                ctx.lineWidth = document.getElementById('p-size').value;
+                ctx.strokeStyle = document.getElementById('p-color').value;
+                ctx.globalCompositeOperation = (currentMode === 'eraser') ? 'destination-out' : 'source-over';
+                
+                if (currentMode === 'eraser') ctx.lineWidth = 40;
+
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            };
+
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            canvas.addEventListener('touchstart', (e) => { if(currentMode !== 'hand') { e.preventDefault(); start(e); } }, {passive: false});
+            canvas.addEventListener('touchmove', (e) => { if(currentMode !== 'hand') { e.preventDefault(); move(e); } }, {passive: false});
+            window.addEventListener('mouseup', () => { isDrawing = false; });
+            window.addEventListener('touchend', () => { isDrawing = false; });
+        }
+
+        // 4. Feature Controls
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`${mode}-tool`).classList.add('active');
+            
+            const canvases = document.querySelectorAll('.draw-layer');
+            if (mode === 'hand') {
+                document.body.classList.remove('drawing-mode');
+                canvases.forEach(c => c.classList.remove('active'));
+            } else {
+                document.body.classList.add('drawing-mode');
+                canvases.forEach(c => c.classList.add('active'));
+            }
+        }
+
+        function saveHistory(canvas) {
+            history.push({ page: canvas.dataset.page, data: canvas.toDataURL() });
+            redoList = [];
+        }
+
+        function undo() {
+            if (history.length === 0) return;
+            const last = history.pop();
+            const canvas = document.querySelector(`.draw-layer[data-page="${last.page}"]`);
+            redoList.push({ page: last.page, data: canvas.toDataURL() });
+            applyState(canvas, last.data);
+        }
+
+        function redo() {
+            if (redoList.length === 0) return;
+            const next = redoList.pop();
+            const canvas = document.querySelector(`.draw-layer[data-page="${next.page}"]`);
+            history.push({ page: next.page, data: canvas.toDataURL() });
+            applyState(canvas, next.data);
+        }
+
+        function applyState(canvas, dataURL) {
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = () => {
+                ctx.save();
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.clearRect(0,0,canvas.width,canvas.height);
+                ctx.drawImage(img, 0, 0);
+                ctx.restore();
+            };
+            img.src = dataURL;
+        }
+
+        function clearContent() {
+            if (!confirm("Clear all drawings on all pages?")) return;
+            document.querySelectorAll('.draw-layer').forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                ctx.save();
+                ctx.setTransform(1,0,0,1,0,0);
+                ctx.clearRect(0,0,canvas.width,canvas.height);
+                ctx.restore();
+            });
+            history = []; redoList = [];
+        }
+
+        function toggleFS() {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
+        }
+
+        async function handleRecording() {
+            const btn = document.getElementById('rec-btn');
+            if (mediaRecorder?.state === "recording") {
+                mediaRecorder.stop();
+                btn.classList.remove('recording');
+                btn.innerHTML = "<i>●</i>REC";
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                chunks = [];
+                mediaRecorder.ondataavailable = e => chunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'presentation.webm'; a.click();
+                };
+                mediaRecorder.start();
+                btn.classList.add('recording');
+                btn.innerHTML = "<i>■</i>STOP";
+            } catch(e) { alert("Permission required to record."); }
+        }
+    </script>
+</body>
+</html>
