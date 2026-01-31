@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HD Content Recorder</title>
+    <title>HD Content Presenter</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
@@ -11,48 +11,46 @@
         * { box-sizing: border-box; touch-action: none; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; background: #000; color: white; font-family: sans-serif; height: 100vh; display: flex; overflow: hidden; }
 
-        /* Content Area (This is what gets recorded) */
-        #viewport { flex-grow: 1; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; }
+        /* Content Area */
+        #viewport { flex-grow: 1; height: 100vh; display: flex; justify-content: center; align-items: center; padding: 10px; position: relative; }
+        
         #record-zone { 
             position: relative; width: 100%; max-width: 1200px; 
             aspect-ratio: 16 / 9; background: #fff; 
             box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
+        /* Layers */
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         #draw-layer { z-index: 50; cursor: crosshair; }
+        #pdf-layer { z-index: 10; }
+        #recorder-canvas { display: none; } /* Hidden Master Canvas for Recording */
 
-        /* Right Scrollable Toolbar */
-        #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #1a1a1a; border-left: 1px solid #333; display: flex; flex-direction: column; flex-shrink: 0; }
+        /* Scrollable Toolbar */
+        #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #1a1a1a; border-left: 1px solid #333; flex-shrink: 0; }
         #toolbar-scroll { 
             height: 100%; overflow-y: auto; display: flex; 
             flex-direction: column; align-items: center; padding: 20px 0; gap: 20px; 
-            touch-action: pan-y; -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
-        #toolbar-scroll::-webkit-scrollbar { width: 4px; }
-        #toolbar-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        #toolbar-scroll::-webkit-scrollbar { width: 0px; }
 
         .tool-btn {
             background: #252525; border: 1px solid #444; color: #999;
-            min-height: 50px; width: 50px; display: flex; align-items: center;
+            min-height: 52px; width: 52px; display: flex; align-items: center;
             justify-content: center; border-radius: 12px; cursor: pointer; font-size: 20px;
             flex-shrink: 0;
         }
         .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
         
-        #page-num { font-size: 11px; font-weight: bold; color: #777; }
+        #page-num { font-size: 12px; font-weight: bold; color: #777; }
         input[type="color"] { border: none; width: 40px; height: 40px; background: none; cursor: pointer; }
-        .label { font-size: 9px; color: #555; font-weight: bold; margin-bottom: -10px; }
+        input[type="range"] { width: 50px; cursor: pointer; }
 
-        /* Initial Setup */
         #upload-screen {
             position: fixed; inset: 0; background: #111; z-index: 1000;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
-        #rec-indicator { 
-            position: absolute; top: 15px; left: 15px; color: #ff4757; 
-            font-size: 14px; font-weight: bold; display: none; z-index: 100;
-            text-shadow: 0 0 5px rgba(0,0,0,0.5);
-        }
+        #rec-indicator { position: absolute; top: 15px; left: 15px; color: #ff4757; font-size: 14px; font-weight: bold; display: none; z-index: 100; }
     </style>
 </head>
 <body>
@@ -62,37 +60,31 @@
 <div id="upload-screen">
     <i class="fas fa-file-pdf fa-4x" style="color:var(--accent); margin-bottom: 20px;"></i>
     <input type="file" id="file-input" accept=".pdf">
-    <p>Upload PDF to start content-only recording</p>
+    <p>Upload PDF to Start Fullscreen Presentation</p>
 </div>
 
 <div id="viewport">
     <div id="record-zone">
         <canvas id="pdf-layer"></canvas>
         <canvas id="draw-layer"></canvas>
+        <canvas id="recorder-canvas"></canvas> 
     </div>
 </div>
 
 <div id="toolbar-wrapper">
     <div id="toolbar-scroll">
-        <button class="tool-btn" onclick="navPage(-1)"><i class="fas fa-arrow-up"></i></button>
+        <button class="tool-btn" onclick="navPage(-1)"><i class="fas fa-chevron-up"></i></button>
         <span id="page-num">0/0</span>
-        <button class="tool-btn" onclick="navPage(1)"><i class="fas fa-arrow-down"></i></button>
-        
+        <button class="tool-btn" onclick="navPage(1)"><i class="fas fa-chevron-down"></i></button>
         <hr width="30" style="opacity:0.1">
-        
         <button class="tool-btn active" id="pen-btn" onclick="setTool('pen')"><i class="fas fa-pen-nib"></i></button>
         <button class="tool-btn" id="eraser-btn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
         <input type="color" id="color-picker" value="#ff0000">
-        <div class="label">SIZE</div>
-        <input type="range" id="size-slider" min="1" max="50" value="5" style="width: 50px; cursor: pointer;">
-        
+        <input type="range" id="size-slider" min="1" max="50" value="5">
         <hr width="30" style="opacity:0.1">
-        
         <button class="tool-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
         <button class="tool-btn" onclick="clearDraw()"><i class="fas fa-trash"></i></button>
-        
-        <div class="label" id="rec-label">START</div>
-        <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-microphone"></i></button>
+        <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-video"></i></button>
     </div>
 </div>
 
@@ -107,11 +99,19 @@
     const dCtx = drawCanvas.getContext('2d');
     const pdfCanvas = document.getElementById('pdf-layer');
     const pCtx = pdfCanvas.getContext('2d');
+    const recCanvas = document.getElementById('recorder-canvas');
+    const rCtx = recCanvas.getContext('2d');
 
-    // 1. HD RENDERING
+    // 1. FULLSCREEN & LOAD
     document.getElementById('file-input').onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        // Forced Fullscreen
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) docEl.requestFullscreen();
+        else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+
         document.getElementById('upload-screen').style.display = 'none';
         const buffer = await file.arrayBuffer();
         pdfDoc = await pdfjsLib.getDocument(buffer).promise;
@@ -123,24 +123,18 @@
         const container = document.getElementById('record-zone');
         const rect = container.getBoundingClientRect();
         
-        // Multiplier for HD Clarity
-        const dpr = (window.devicePixelRatio || 1) * 2;
-        pdfCanvas.width = drawCanvas.width = rect.width * dpr;
-        pdfCanvas.height = drawCanvas.height = rect.height * dpr;
+        const dpr = (window.devicePixelRatio || 1) * 2.5; // HD Quality
+        pdfCanvas.width = drawCanvas.width = recCanvas.width = rect.width * dpr;
+        pdfCanvas.height = drawCanvas.height = recCanvas.height = rect.height * dpr;
 
         const viewport = page.getViewport({ scale: pdfCanvas.width / page.getViewport({scale:1}).width });
         await page.render({ canvasContext: pCtx, viewport }).promise;
         document.getElementById('page-num').innerText = `${pageNum}/${pdfDoc.numPages}`;
         clearDraw();
+        updateRecorderCanvas();
     }
 
-    function navPage(dir) {
-        if (!pdfDoc || pageNum + dir < 1 || pageNum + dir > pdfDoc.numPages) return;
-        pageNum += dir;
-        renderPage();
-    }
-
-    // 2. SMOOTH HD WRITING
+    // 2. SMOOTH WRITING
     function getPos(e) {
         const rect = drawCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -165,7 +159,7 @@
 
         dCtx.lineJoin = dCtx.lineCap = 'round';
         dCtx.strokeStyle = currentTool === 'eraser' ? '#ffffff' : document.getElementById('color-picker').value;
-        dCtx.lineWidth = document.getElementById('size-slider').value * (drawCanvas.width / 1000); 
+        dCtx.lineWidth = document.getElementById('size-slider').value * (drawCanvas.width / 1200); 
 
         if (points.length > 2) {
             dCtx.beginPath();
@@ -175,7 +169,15 @@
             dCtx.quadraticCurveTo(points[points.length - 2].x, points[points.length - 2].y, xc, yc);
             dCtx.stroke();
         }
+        updateRecorderCanvas();
     };
+
+    function updateRecorderCanvas() {
+        rCtx.fillStyle = "white";
+        rCtx.fillRect(0, 0, recCanvas.width, recCanvas.height);
+        rCtx.drawImage(pdfCanvas, 0, 0);
+        rCtx.drawImage(drawCanvas, 0, 0);
+    }
 
     const stopDraw = () => { isDrawing = false; points = []; };
 
@@ -186,28 +188,28 @@
     drawCanvas.addEventListener('touchmove', drawMove, {passive:false});
     drawCanvas.addEventListener('touchend', stopDraw);
 
+    function navPage(dir) {
+        if (!pdfDoc || pageNum + dir < 1 || pageNum + dir > pdfDoc.numPages) return;
+        pageNum += dir;
+        renderPage();
+    }
+
     function setTool(t) {
         currentTool = t;
         document.getElementById('pen-btn').classList.toggle('active', t === 'pen');
         document.getElementById('eraser-btn').classList.toggle('active', t === 'eraser');
     }
 
-    function saveHistory() {
-        historyStack.push(drawCanvas.toDataURL());
-        if(historyStack.length > 30) historyStack.shift();
-    }
-
+    function saveHistory() { historyStack.push(drawCanvas.toDataURL()); if(historyStack.length > 20) historyStack.shift(); }
     function undo() {
         if (historyStack.length > 0) {
-            let img = new Image();
-            img.src = historyStack.pop();
-            img.onload = () => { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); dCtx.drawImage(img,0,0); };
+            let img = new Image(); img.src = historyStack.pop();
+            img.onload = () => { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); dCtx.drawImage(img,0,0); updateRecorderCanvas(); };
         }
     }
+    function clearDraw() { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); historyStack = []; updateRecorderCanvas(); }
 
-    function clearDraw() { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); historyStack = []; }
-
-    // 3. CONTENT-ONLY RECORDING (No Toolbar)
+    // 3. CONTENT RECORDING (PDF + Ink + Audio)
     let recorder, chunks = [];
     async function toggleRecording() {
         const btn = document.getElementById('rec-btn');
@@ -215,48 +217,33 @@
 
         if (recorder && recorder.state === 'recording') {
             recorder.stop();
-            btn.classList.remove('active');
+            btn.style.color = "#ff4757";
             indicator.style.display = 'none';
             return;
         }
 
         try {
-            // Get Microphone
-            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            // Get Content Stream from BOTH canvases merged
-            // We use the draw-layer as the source because it's the top canvas
-            const videoStream = drawCanvas.captureStream(30);
-            
-            // Because the PDF is on a separate canvas, we must draw the PDF onto the drawCanvas
-            // to ensure it shows up in the captureStream. 
-            // Better way: Capture the wrapper container using a frame-by-frame draw logic
-            // or use a temporary hidden canvas. For now, let's use the standard capture:
-            
-            const combined = new MediaStream([
-                ...videoStream.getVideoTracks(),
-                ...audioStream.getAudioTracks()
-            ]);
+            const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Record from the "Hidden Master Canvas" that merges both layers
+            const stream = recCanvas.captureStream(30);
+            const combined = new MediaStream([...stream.getTracks(), ...audio.getTracks()]);
 
             recorder = new MediaRecorder(combined, { mimeType: 'video/webm' });
             chunks = [];
-
             recorder.ondataavailable = e => chunks.push(e.data);
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
-                a.download = 'presentation_content.webm';
+                a.href = URL.createObjectURL(blob);
+                a.download = 'presentation_hd.webm';
                 a.click();
-                audioStream.getTracks().forEach(t => t.stop());
+                audio.getTracks().forEach(t => t.stop());
             };
-
             recorder.start();
-            btn.classList.add('active');
+            btn.style.color = "#2ecc71";
             indicator.style.display = 'block';
         } catch (e) {
-            alert("Recording failed. Please ensure you are on a desktop browser and allow microphone access.");
+            alert("Recording requires Microphone access and a browser that supports captureStream.");
         }
     }
 </script>
