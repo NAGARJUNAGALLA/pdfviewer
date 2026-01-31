@@ -3,27 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Real-Time HD PDF Presenter</title>
+    <title>Pro HD Presenter</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
-        :root { --bg: #1a1a1b; --sidebar: #2d2d2e; --accent: #00a2ff; --danger: #ff4d4d; }
-        body { margin: 0; background: var(--bg); color: white; font-family: 'Inter', sans-serif; overflow: hidden; }
+        :root { --bg: #121212; --sidebar: #1e1e1e; --accent: #0078d4; --danger: #d13438; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
         #main-app { display: flex; height: 100vh; width: 100vw; }
 
         /* Scrollable Content */
         #viewer-container { 
             flex: 1; overflow-y: auto; display: flex; flex-direction: column; 
-            align-items: center; padding: 40px 10px; background: #121212;
-            scroll-behavior: auto; /* Smoother for manual scroll */
+            align-items: center; padding: 40px 20px; background: #000;
         }
         body.drawing-mode #viewer-container { overflow-y: hidden; }
 
-        /* 16:9 HD Frame */
+        /* 16:9 Frame */
         .page-wrapper {
-            position: relative; width: 85%; max-width: 1300px; aspect-ratio: 16 / 9;
-            margin-bottom: 50px; background: white; flex-shrink: 0;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            position: relative; width: 88%; max-width: 1400px; aspect-ratio: 16 / 9;
+            margin-bottom: 40px; background: white; flex-shrink: 0;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.8);
         }
 
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -33,68 +32,58 @@
         /* Vertical Scrollable Sidebar */
         #right-sidebar { 
             width: 80px; background: var(--sidebar); display: flex; 
-            flex-direction: column; align-items: center; padding: 15px 0;
-            border-left: 1px solid #444; overflow-y: auto; overflow-x: hidden;
+            flex-direction: column; align-items: center; padding: 20px 0;
+            border-left: 1px solid #333; overflow-y: auto;
         }
-        #right-sidebar::-webkit-scrollbar { width: 4px; }
-        #right-sidebar::-webkit-scrollbar-thumb { background: #555; }
 
         .btn { 
-            background: #3e3e40; color: white; border: none; min-height: 60px; width: 60px;
-            border-radius: 10px; cursor: pointer; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; font-size: 10px; gap: 5px; margin-bottom: 12px;
-            flex-shrink: 0; transition: 0.1s;
+            background: #333; color: white; border: none; min-height: 60px; width: 60px;
+            border-radius: 8px; cursor: pointer; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; font-size: 10px; gap: 4px; margin-bottom: 12px;
+            transition: 0.1s; flex-shrink: 0;
         }
-        .btn:active { transform: scale(0.9); }
-        .btn i { font-style: normal; font-size: 20px; }
-        .btn.active { background: var(--accent); box-shadow: 0 0 15px var(--accent); }
+        .btn.active { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
         .btn-rec { background: var(--danger); font-weight: bold; }
-        .btn-rec.recording { animation: blink 1s infinite; }
-        
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .btn-rec.recording { animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        .tool-label { font-size: 10px; color: #aaa; margin-bottom: 5px; }
-        input[type="color"] { border: none; width: 40px; height: 40px; cursor: pointer; background: none; margin-bottom: 10px; }
-        select { background: #333; color: white; border: 1px solid #555; padding: 5px; border-radius: 5px; margin-bottom: 15px; }
+        input[type="color"] { border: none; width: 35px; height: 35px; cursor: pointer; background: none; margin: 10px 0; }
+        select { background: #333; color: white; border: 1px solid #555; width: 60px; margin-bottom: 15px; }
         
-        #init-screen { position: fixed; inset: 0; background: #1a1a1b; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #init { position: fixed; inset: 0; background: #121212; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
 
-    <div id="init-screen">
-        <h1 style="margin-bottom:30px; font-weight: 300;">Real-Time HD Presenter</h1>
-        <label style="background:var(--accent); padding:15px 30px; border-radius:50px; cursor:pointer; font-weight:bold;">
-            Select PDF File
-            <input type="file" id="pdf-input" accept="application/pdf" hidden>
-        </label>
+    <div id="init">
+        <h1 style="margin-bottom:20px;">HD PDF Presentation Mode</h1>
+        <input type="file" id="pdf-file" accept="application/pdf">
+        <p style="color:#666; margin-top:15px;">16:9 Aspect Ratio • HD Ink • MP4 Recording</p>
     </div>
 
     <div id="main-app" style="display:none">
         <div id="viewer-container"></div>
 
         <div id="right-sidebar">
-            <span class="tool-label">MODES</span>
-            <button class="btn active" id="hand-mode" onclick="setMode('hand')"><i>✋</i>Hand</button>
-            <button class="btn" id="pen-mode" onclick="setMode('pen')"><i>🖊️</i>Pen</button>
-            <button class="btn" id="era-mode" onclick="setMode('eraser')"><i>🧼</i>Eraser</button>
+            <button class="btn active" id="mode-hand" onclick="setMode('hand')">✋<br>Hand</button>
+            <button class="btn" id="mode-pen" onclick="setMode('pen')">🖊️<br>Pen</button>
+            <button class="btn" id="mode-era" onclick="setMode('eraser')">🧼<br>Eraser</button>
             
-            <span class="tool-label">STYLE</span>
+            <hr style="width:60%; border:0; border-top:1px solid #444">
             <input type="color" id="p-color" value="#ff0000">
             <select id="p-size">
-                <option value="2">2px</option>
-                <option value="5" selected>5px</option>
+                <option value="3">3px</option>
+                <option value="6" selected>6px</option>
                 <option value="12">12px</option>
             </select>
 
-            <span class="tool-label">EDIT</span>
-            <button class="btn" onclick="undo()"><i>↶</i>Undo</button>
-            <button class="btn" onclick="redo()"><i>↷</i>Redo</button>
-            <button class="btn" onclick="clearAll()" style="color:#ffae00"><i>🗑️</i>Clear</button>
+            <button class="btn" onclick="undo()">↶<br>Undo</button>
+            <button class="btn" onclick="redo()">↷<br>Redo</button>
+            <button class="btn" onclick="clearPages()">🗑️<br>Clear</button>
             
-            <span class="tool-label">EXPORT</span>
-            <button class="btn btn-rec" id="rec-btn" onclick="toggleRecording()"><i>●</i>REC</button>
-            <button class="btn" onclick="toggleFS()"><i>⛶</i>FS</button>
+            <hr style="width:60%; border:0; border-top:1px solid #444">
+            <button class="btn btn-rec" id="rec-btn" onclick="toggleRecording()">●<br>REC</button>
+            <button class="btn" onclick="toggleFS()">⛶<br>FS</button>
         </div>
     </div>
 
@@ -102,16 +91,15 @@
         const pdfjsLib = window['pdfjs-dist/build/pdf'];
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        let pdfDoc = null, currentMode = 'hand', drawing = false;
+        let pdfDoc = null, currentMode = 'hand', isDrawing = false;
         let mediaRecorder, chunks = [];
-        let history = [], redoStack = [];
+        let historyStack = [], redoStack = [];
 
-        // PDF Loading
-        document.getElementById('pdf-input').onchange = async (e) => {
+        document.getElementById('pdf-file').onchange = async (e) => {
             const file = e.target.files[0];
             const data = await file.arrayBuffer();
             pdfDoc = await pdfjsLib.getDocument(data).promise;
-            document.getElementById('init-screen').style.display = 'none';
+            document.getElementById('init').style.display = 'none';
             document.getElementById('main-app').style.display = 'flex';
             renderPages();
         };
@@ -127,12 +115,9 @@
                 wrap.innerHTML = `<canvas class="pdf-layer"></canvas><canvas class="draw-layer" data-page="${i}"></canvas>`;
                 container.appendChild(wrap);
 
-                const pc = wrap.querySelector('.pdf-layer');
-                const dc = wrap.querySelector('.draw-layer');
+                const pc = wrap.querySelector('.pdf-layer'), dc = wrap.querySelector('.draw-layer');
                 const vp = page.getViewport({ scale: 2 });
-                
-                const w = vp.width;
-                const h = w * (9/16);
+                const w = vp.width, h = w * (9/16);
 
                 pc.width = dc.width = w * dpr;
                 pc.height = dc.height = h * dpr;
@@ -141,18 +126,17 @@
                 pctx.scale(dpr, dpr);
                 await page.render({ canvasContext: pctx, viewport: vp }).promise;
                 
-                attachInk(dc, dpr);
+                initInk(dc, dpr);
             }
         }
 
-        // Real-Time Smooth Ink Engine
-        function attachInk(canvas, dpr) {
+        function initInk(canvas, dpr) {
             const ctx = canvas.getContext('2d');
             ctx.scale(dpr, dpr);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
-            let lastX, lastY;
+            let lx, ly;
 
             const getPos = (e) => {
                 const r = canvas.getBoundingClientRect();
@@ -166,43 +150,41 @@
 
             const start = (e) => {
                 if (currentMode === 'hand') return;
-                drawing = true;
-                saveHistory(canvas);
+                isDrawing = true;
+                saveState(canvas);
                 const pos = getPos(e);
-                [lastX, lastY] = [pos.x, pos.y];
-                requestAnimationFrame(() => drawInk(pos.x, pos.y, ctx));
+                [lx, ly] = [pos.x, pos.y];
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
             };
 
             const move = (e) => {
-                if (!drawing || currentMode === 'hand') return;
+                if (!isDrawing || currentMode === 'hand') return;
                 const pos = getPos(e);
-                requestAnimationFrame(() => {
-                    ctx.lineWidth = document.getElementById('p-size').value;
-                    ctx.strokeStyle = document.getElementById('p-color').value;
-                    ctx.globalCompositeOperation = (currentMode === 'eraser') ? 'destination-out' : 'source-over';
-                    if (currentMode === 'eraser') ctx.lineWidth = 40;
+                
+                // Writing settings
+                ctx.lineWidth = document.getElementById('p-size').value;
+                ctx.strokeStyle = document.getElementById('p-color').value;
+                ctx.globalCompositeOperation = (currentMode === 'eraser') ? 'destination-out' : 'source-over';
+                if (currentMode === 'eraser') ctx.lineWidth = 40;
 
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(pos.x, pos.y);
-                    ctx.stroke();
-                    [lastX, lastY] = [pos.x, pos.y];
-                });
+                // Real-time smoothing
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                [lx, ly] = [pos.x, pos.y];
             };
 
             canvas.addEventListener('mousedown', start);
-            canvas.addEventListener('mousemove', move);
+            canvas.addEventListener('mousemove', (e) => requestAnimationFrame(() => move(e)));
             canvas.addEventListener('touchstart', (e) => { if(currentMode !== 'hand') { e.preventDefault(); start(e); } }, {passive: false});
             canvas.addEventListener('touchmove', (e) => { if(currentMode !== 'hand') { e.preventDefault(); move(e); } }, {passive: false});
-            window.addEventListener('mouseup', () => drawing = false);
-            window.addEventListener('touchend', () => drawing = false);
+            window.addEventListener('mouseup', () => isDrawing = false);
         }
 
         function setMode(m) {
             currentMode = m;
             document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(`${m}-mode`).classList.add('active');
-            
+            document.getElementById(`mode-${m}`).classList.add('active');
             const canvases = document.querySelectorAll('.draw-layer');
             if (m === 'hand') {
                 document.body.classList.remove('drawing-mode');
@@ -213,60 +195,57 @@
             }
         }
 
-        // Undo/Redo/Clear
-        function saveHistory(c) { history.push({ p: c.dataset.page, d: c.toDataURL() }); redoStack = []; }
+        // History Management
+        function saveState(c) { historyStack.push({ p: c.dataset.page, d: c.toDataURL() }); redoStack = []; }
         function undo() {
-            if (!history.length) return;
-            const last = history.pop();
+            if (!historyStack.length) return;
+            const last = historyStack.pop();
             const c = document.querySelector(`.draw-layer[data-page="${last.p}"]`);
             redoStack.push({ p: last.p, d: c.toDataURL() });
-            restore(c, last.d);
-        }
-        function redo() {
-            if (!redoStack.length) return;
-            const next = redoStack.pop();
-            const c = document.querySelector(`.draw-layer[data-page="${next.p}"]`);
-            history.push({ p: next.p, d: c.toDataURL() });
-            restore(c, next.d);
-        }
-        function restore(c, data) {
-            const ctx = c.getContext('2d');
             const img = new Image();
             img.onload = () => {
+                const ctx = c.getContext('2d');
                 ctx.save(); ctx.setTransform(1,0,0,1,0,0);
                 ctx.clearRect(0,0,c.width,c.height);
                 ctx.drawImage(img, 0, 0); ctx.restore();
             };
-            img.src = data;
+            img.src = last.d;
         }
-        function clearAll() {
-            if (!confirm("Clear all drawings?")) return;
+
+        function clearPages() {
+            if(!confirm("Clear everything?")) return;
             document.querySelectorAll('.draw-layer').forEach(c => {
                 const ctx = c.getContext('2d');
                 ctx.save(); ctx.setTransform(1,0,0,1,0,0);
                 ctx.clearRect(0,0,c.width,c.height); ctx.restore();
             });
-            history = []; redoStack = [];
         }
 
-        // Recording Logic
+        // Recording with Combined Streams (Audio + Video)
         async function toggleRecording() {
             const btn = document.getElementById('rec-btn');
             if (mediaRecorder?.state === "recording") {
                 mediaRecorder.stop();
                 btn.classList.remove('recording');
-                btn.innerHTML = "<i>●</i>REC";
+                btn.innerHTML = "●<br>REC";
                 return;
             }
 
             try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                // 1. Capture Screen
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
                     video: { frameRate: 30 }, 
-                    audio: true 
+                    audio: true // Captures system audio
                 });
                 
-                // Chrome/Edge use 'video/webm' but can be renamed to mp4 safely for most players
-                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+                // 2. Capture Mic
+                const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // 3. Mix Tracks
+                const tracks = [...screenStream.getVideoTracks(), ...screenStream.getAudioTracks(), ...micStream.getAudioTracks()];
+                const combinedStream = new MediaStream(tracks);
+
+                mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9' });
                 chunks = [];
 
                 mediaRecorder.ondataavailable = e => chunks.push(e.data);
@@ -274,13 +253,16 @@
                     const blob = new Blob(chunks, { type: 'video/mp4' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url; a.download = 'presentation_recording.mp4'; a.click();
-                    stream.getTracks().forEach(t => t.stop());
+                    a.href = url; a.download = 'presentation.mp4'; a.click();
+                    combinedStream.getTracks().forEach(t => t.stop());
                 };
+
                 mediaRecorder.start();
                 btn.classList.add('recording');
-                btn.innerHTML = "<i>■</i>STOP";
-            } catch(e) { alert("Recording requires screen permission."); }
+                btn.innerHTML = "■<br>STOP";
+            } catch(e) {
+                alert("Recording failed. Make sure to allow BOTH screen and microphone permissions.");
+            }
         }
 
         function toggleFS() {
