@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HD Content Presenter</title>
+    <title>HD Content Presenter Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
@@ -19,11 +19,10 @@
             aspect-ratio: 16 / 9; background: #fff; 
             box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
-        /* Layers */
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         #draw-layer { z-index: 50; cursor: crosshair; }
         #pdf-layer { z-index: 10; }
-        #recorder-canvas { display: none; } /* Hidden Master Canvas for Recording */
+        #recorder-canvas { display: none; } 
 
         /* Scrollable Toolbar */
         #toolbar-wrapper { width: var(--toolbar-w); height: 100vh; background: #1a1a1a; border-left: 1px solid #333; flex-shrink: 0; }
@@ -51,6 +50,7 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
         #rec-indicator { position: absolute; top: 15px; left: 15px; color: #ff4757; font-size: 14px; font-weight: bold; display: none; z-index: 100; }
+        .label { font-size: 9px; color: #555; font-weight: bold; margin-bottom: -15px; }
     </style>
 </head>
 <body>
@@ -60,7 +60,7 @@
 <div id="upload-screen">
     <i class="fas fa-file-pdf fa-4x" style="color:var(--accent); margin-bottom: 20px;"></i>
     <input type="file" id="file-input" accept=".pdf">
-    <p>Upload PDF to Start Fullscreen Presentation</p>
+    <p>Upload PDF to Start</p>
 </div>
 
 <div id="viewport">
@@ -76,15 +76,24 @@
         <button class="tool-btn" onclick="navPage(-1)"><i class="fas fa-chevron-up"></i></button>
         <span id="page-num">0/0</span>
         <button class="tool-btn" onclick="navPage(1)"><i class="fas fa-chevron-down"></i></button>
+        
         <hr width="30" style="opacity:0.1">
+        
         <button class="tool-btn active" id="pen-btn" onclick="setTool('pen')"><i class="fas fa-pen-nib"></i></button>
         <button class="tool-btn" id="eraser-btn" onclick="setTool('eraser')"><i class="fas fa-eraser"></i></button>
         <input type="color" id="color-picker" value="#ff0000">
         <input type="range" id="size-slider" min="1" max="50" value="5">
+        
         <hr width="30" style="opacity:0.1">
+        
         <button class="tool-btn" onclick="undo()"><i class="fas fa-undo"></i></button>
         <button class="tool-btn" onclick="clearDraw()"><i class="fas fa-trash"></i></button>
+        
+        <div class="label">REC</div>
         <button class="tool-btn" id="rec-btn" onclick="toggleRecording()" style="color:#ff4757;"><i class="fas fa-video"></i></button>
+        
+        <div class="label">SCREEN</div>
+        <button class="tool-btn" id="fs-btn" onclick="toggleFullscreen()"><i class="fas fa-expand"></i></button>
     </div>
 </div>
 
@@ -102,30 +111,49 @@
     const recCanvas = document.getElementById('recorder-canvas');
     const rCtx = recCanvas.getContext('2d');
 
-    // 1. FULLSCREEN & LOAD
+    // 1. FILE LOAD
     document.getElementById('file-input').onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
-        // Forced Fullscreen
-        const docEl = document.documentElement;
-        if (docEl.requestFullscreen) docEl.requestFullscreen();
-        else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
-
+        toggleFullscreen(); // Enter FS on load
         document.getElementById('upload-screen').style.display = 'none';
         const buffer = await file.arrayBuffer();
         pdfDoc = await pdfjsLib.getDocument(buffer).promise;
         renderPage();
     };
 
+    // FULLSCREEN TOGGLE LOGIC
+    function toggleFullscreen() {
+        const btn = document.getElementById('fs-btn');
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {});
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                btn.innerHTML = '<i class="fas fa-expand"></i>';
+            }
+        }
+    }
+
+    // Monitor FS changes (e.g., if user hits ESC key)
+    document.addEventListener('fullscreenchange', () => {
+        const btn = document.getElementById('fs-btn');
+        if (!document.fullscreenElement) {
+            btn.innerHTML = '<i class="fas fa-expand"></i>';
+        } else {
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
+        }
+    });
+
     async function renderPage() {
         const page = await pdfDoc.getPage(pageNum);
         const container = document.getElementById('record-zone');
         const rect = container.getBoundingClientRect();
         
-        const dpr = (window.devicePixelRatio || 1) * 2.5; // HD Quality
+        const dpr = (window.devicePixelRatio || 1) * 2.5; 
         pdfCanvas.width = drawCanvas.width = recCanvas.width = rect.width * dpr;
-        pdfCanvas.height = drawCanvas.height = recCanvas.height = rect.height * dpr;
+        pdfCanvas.height = drawCanvas.height = recCanvas.height * dpr;
 
         const viewport = page.getViewport({ scale: pdfCanvas.width / page.getViewport({scale:1}).width });
         await page.render({ canvasContext: pCtx, viewport }).promise;
@@ -209,7 +237,7 @@
     }
     function clearDraw() { dCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height); historyStack = []; updateRecorderCanvas(); }
 
-    // 3. CONTENT RECORDING (PDF + Ink + Audio)
+    // 3. CONTENT RECORDING
     let recorder, chunks = [];
     async function toggleRecording() {
         const btn = document.getElementById('rec-btn');
@@ -217,14 +245,12 @@
 
         if (recorder && recorder.state === 'recording') {
             recorder.stop();
-            btn.style.color = "#ff4757";
             indicator.style.display = 'none';
             return;
         }
 
         try {
             const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // Record from the "Hidden Master Canvas" that merges both layers
             const stream = recCanvas.captureStream(30);
             const combined = new MediaStream([...stream.getTracks(), ...audio.getTracks()]);
 
@@ -240,10 +266,9 @@
                 audio.getTracks().forEach(t => t.stop());
             };
             recorder.start();
-            btn.style.color = "#2ecc71";
             indicator.style.display = 'block';
         } catch (e) {
-            alert("Recording requires Microphone access and a browser that supports captureStream.");
+            alert("Recording requires Microphone access.");
         }
     }
 </script>
