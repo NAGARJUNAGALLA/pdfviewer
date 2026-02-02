@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>SlideGen - Math & Edit Perfect</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Gidugu&family=NTR&family=Ramabhadra&family=Tenali+Ramakrishna&family=Lobster&family=Montserrat:wght@400;700&family=Open+Sans:wght@400;600&family=Oswald&family=Pacifico&family=Roboto:wght@400;700&family=Lato&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --sidebar-width: 280px;
+            --bottom-bar-height: 100px; 
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f3f4f6;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden; 
+            display: flex;
+        }
+
+        /* --- UI Elements --- */
+        .toggle-btn {
+            position: absolute; top: 15px; left: 15px;
+            background: white; border: 1px solid #ddd;
+            width: 36px; height: 36px; border-radius: 8px;
+            cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000; display: flex; align-items: center; justify-content: center;
+            color: #333; font-size: 1.1rem;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: white;
+            border-right: 1px solid #ddd;
+            display: flex; flex-direction: column;
+            padding: 20px; padding-top: 60px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            z-index: 900; transition: margin-left 0.3s ease;
+            height: 100%;
+            overflow-y: auto; 
+            flex-shrink: 0; 
+        }
+
+        .sidebar.hidden { margin-left: calc(var(--sidebar-width) * -1); }
+        
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; height: 100%; left: 0; top: 0; transform: translateX(0); width: 85%; max-width: 300px; }
+            .sidebar.hidden { transform: translateX(-100%); margin-left: 0; }
+        }
+
+        .brand { position: absolute; top: 20px; left: 60px; font-size: 1.1rem; font-weight: bold; color: var(--primary); }
+        .tool-group { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .tool-group h3 { font-size: 0.75rem; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+
+        .btn {
+            display: flex; align-items: center; width: 100%; padding: 10px;
+            margin-bottom: 6px; background: white; border: 1px solid #e5e7eb;
+            border-radius: 6px; cursor: pointer; font-size: 0.9rem; color: #374151;
+            justify-content: center; user-select: none;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn.primary { background-color: var(--primary); color: white; border: none; }
+        .btn.danger { color: #ef4444; border-color: #fee2e2; }
+
+        .style-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: #555; }
+        input[type="color"] { border: none; width: 30px; height: 30px; cursor: pointer; background: none; padding: 0; }
+        input[type="file"] { display: none; }
+
+        .shape-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+        .shape-btn { font-size: 1.2rem; padding: 5px; }
+
+        /* --- Workspace --- */
+        .workspace {
+            flex-grow: 1; display: grid; grid-template-rows: 1fr var(--bottom-bar-height);
+            background-color: #e5e7eb; position: relative; height: 100%; overflow: hidden;
+        }
+        .canvas-area {
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; padding: 20px; width: 100%; height: 100%;
+        }
+        .canvas-wrapper { box-shadow: 0 10px 20px rgba(0,0,0,0.15); background: white; }
+
+        /* --- Bottom Bar --- */
+        .bottom-bar {
+            background: white; border-top: 1px solid #ddd;
+            display: flex; align-items: center; justify-content: center; 
+            gap: 10px; z-index: 50; width: 100%; height: var(--bottom-bar-height);
+            padding-bottom: calc(30px + env(safe-area-inset-bottom)); padding-top: 10px;
+        }
+        .slide-counter { font-weight: 600; min-width: 50px; text-align: center; font-size: 0.9rem; }
+        .bottom-bar .btn { width: auto; padding: 10px 16px; margin: 0; font-size: 0.9rem; }
+
+        /* --- Presentation Bar --- */
+        .presentation-bar {
+            display: none; position: fixed; top: 50%; right: 15px; transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.9); padding: 15px 8px; border-radius: 30px;
+            z-index: 99999; flex-direction: column; align-items: center; gap: 8px;
+            box-shadow: -5px 0 20px rgba(0,0,0,0.3); max-height: 85vh; overflow-y: auto; overflow-x: hidden;
+            backdrop-filter: blur(5px); scrollbar-width: none; 
+        }
+        .presentation-bar .btn {
+            background: #f3f4f6; color: #333; border: 1px solid #ddd; margin: 0; padding: 0;
+            width: 34px; height: 34px; font-size: 0.85rem; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .presentation-bar .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn.recording { background-color: #ef4444; color: white; border-color: #ef4444; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        .pen-slider { width: 40px; height: 6px; flex-shrink: 0; margin: 5px 0; }
+        .divider { width: 80%; height: 1px; background: #ccc; margin: 4px 0; flex-shrink: 0; }
+
+        .present-toggle {
+            display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 40px; background: rgba(255,255,255,0.3); border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.6); color: white; font-size: 1.2rem;
+            cursor: pointer; z-index: 100000; backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: all 0.2s;
+        }
+        .present-toggle.active { background: var(--primary); border-color: var(--primary); color: white; opacity: 1; }
+
+        /* --- MODAL --- */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 100000; align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; width: 90%; max-width: 500px; padding: 20px;
+            border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            max-height: 90vh; display: flex; flex-direction: column;
+        }
+        .modal-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 15px; color: var(--primary); }
+        .modal-body { overflow-y: auto; padding-right: 5px; flex: 1; }
+        
+        .modal-body input, .modal-body textarea, .modal-body select { 
+            width: 100%; padding: 10px; margin-bottom: 10px; 
+            border: 1px solid #ddd; border-radius: 6px; 
+            font-family: inherit; font-size: 0.95rem; resize: vertical; 
+        }
+        .modal-body textarea { min-height: 50px; }
+        .modal-body label { font-size: 0.85rem; color: #555; display: block; margin-bottom: 3px; font-weight: 600; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+        
+        /* Style Toolbar inside Modal */
+        .style-toolbar {
+            display: flex; gap: 10px; margin-bottom: 15px; padding: 10px;
+            background: #f8fafc; border: 1px solid #eee; border-radius: 8px;
+            align-items: center; flex-wrap: wrap;
+        }
+        .style-toolbar select { width: auto; margin: 0; flex: 1; min-width: 100px; }
+        .style-toolbar input[type="color"] { width: 40px; height: 40px; border-radius: 4px; border: 1px solid #ddd; cursor: pointer; margin: 0; padding: 0; }
+
+        .table-grid-editor { display: grid; gap: 5px; margin-bottom: 10px; }
+        .table-grid-editor textarea { margin: 0; min-height: 40px; font-size: 0.85rem; }
+
+        body.presentation-mode { background-color: #000; }
+        body.presentation-mode .sidebar, body.presentation-mode .bottom-bar, body.presentation-mode .toggle-btn { display: none !important; }
+        body.presentation-mode .workspace { background-color: #000; grid-template-rows: 1fr; }
+        body.presentation-mode .canvas-area { padding: 0; }
+        body.presentation-mode .present-toggle { display: flex; }
+
+    </style>
+</head>
+<body>
+
+    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
+
+    <div class="sidebar" id="sidebar">
+        <div class="brand">SlideGen</div>
+
+        <div class="tool-group">
+            <h3>Education</h3>
+            <button class="btn" onclick="openConfig('eduText')">📝 Edu Text</button>
+            <button class="btn" onclick="openConfig('mcq')">❓ MCQ</button>
+            <button class="btn" onclick="openConfig('table')">▦ Table</button>
+            <button class="btn" onclick="openConfig('matching')">⇄ Matching</button>
+            <button class="btn" onclick="openConfig('math')">𝝅 Formula</button>
+        </div>
+
+        <div class="tool-group">
+            <h3>Insert & Shapes</h3>
+            <button class="btn" onclick="addText()">🔡 Simple Box</button>
+            <button class="btn" onclick="document.getElementById('objImgInput').click()">🖼️ Image</button>
+            <input type="file" id="objImgInput" accept="image/*" onchange="addObjImage(this)">
+            
+            <div class="shape-grid" style="margin-top:5px;">
+                <button class="btn shape-btn" onclick="addRect()">⬛</button>
+                <button class="btn shape-btn" onclick="addCircle()">⚪</button>
+                <button class="btn shape-btn" onclick="addTriangle()">🔺</button>
+            </div>
+        </div>
+
+        <div class="tool-group">
+            <h3>Background</h3>
+            <div style="display:flex; gap:5px; margin-bottom:8px;">
+                <button class="btn" onclick="setVintageBg()" style="background:#06402B; color:#FFFFFF; flex:1;">📜 Vintage</button>
+                <button class="btn" onclick="setRuledBg()" style="background:#fff; color:#333; border:1px solid #ccc; flex:1;">📝 Ruled</button>
+            </div>
+            <div class="style-row">
+                <input type="color" onchange="setSolidBg(this.value)" title="Solid Color">
+                <button class="btn" style="width:auto; margin:0; flex:1;" onclick="document.getElementById('bgImgInput').click()">🌄 BG Image</button>
+            </div>
+            <input type="file" id="bgImgInput" accept="image/*" onchange="setBgImage(this)">
+        </div>
+
+        <div class="tool-group">
+            <h3>Project</h3>
+            <button class="btn primary" onclick="startPresentation()">▶️ <b>Present</b></button>
+            <button class="btn" onclick="editSelectedObject()">✏️ Edit Item</button>
+            <button class="btn" onclick="saveProject()">💾 Save</button>
+            <button class="btn" onclick="document.getElementById('loadJsonInput').click()">📂 Load</button>
+            <input type="file" id="loadJsonInput" onchange="loadProject(this)">
+            <button class="btn danger" onclick="deleteObject()">🗑️ Delete Item</button>
+        </div>
+    </div>
+
+    <div class="workspace" id="workspaceContainer">
+        <div class="canvas-area" id="canvasArea">
+            <div class="canvas-wrapper">
+                <canvas id="slideCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="bottom-bar">
+            <button class="btn" onclick="prevSlide()">❮</button>
+            <span class="slide-counter" id="slideCounter">1 / 1</span>
+            <button class="btn" onclick="nextSlide()">❯</button>
+            <button class="btn primary" onclick="addNewSlide()">+ Slide</button>
+        </div>
+    </div>
+
+    <button class="present-toggle" id="presentToggle" onclick="togglePresentationBar()" title="Show/Hide Toolbar">🛠</button>
+
+    <div class="presentation-bar" id="presentationBar">
+        <button class="btn" onclick="prevSlide()">▲</button>
+        <button class="btn" onclick="nextSlide()">▼</button>
+        <div class="divider"></div>
+        <button class="btn" id="btnRec" onclick="toggleRecording()" title="Record">🔴</button>
+        <div class="divider"></div>
+        <button class="btn" id="btnNormal" onclick="setPenMode('normal')" title="Pen">🖊️</button>
+        <button class="btn" id="btnCursive" onclick="setPenMode('cursive')" title="Cursive" style="font-family:'Pacifico'; font-size:0.7rem;">f</button>
+        <button class="btn" id="btnEraser" onclick="setEraserMode()" title="Eraser">🧹</button>
+        <input type="range" class="pen-slider" min="1" max="30" value="3" oninput="updatePenSize(this.value)" title="Size">
+        <input type="color" id="presentPenColor" value="#ff0000" onchange="changePenColor(this.value)" title="Color">
+        <div class="divider"></div>
+        <button class="btn" onclick="undoInk()" title="Undo">↩️</button>
+        <button class="btn" onclick="redoInk()" title="Redo">↪️</button>
+        <div class="divider"></div>
+        <button class="btn" onclick="togglePresentationBar()" title="Hide">➡</button>
+        <button class="btn danger" onclick="endPresentation()" title="Exit">❌</button>
+    </div>
+
+    <div id="configModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title" id="modalTitle">Configuration</div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal()" style="width:auto;">Cancel</button>
+                <button class="btn primary" onclick="saveConfig()" style="width:auto;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTS & GLOBALS ---
+        const BASE_WIDTH = 800;
+        const BASE_HEIGHT = 450;
+        let isPresentationMode = false;
+        let isEraserActive = false;
+        let inkHistory = [];
+        let inkRedoStack = [];
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        
+        // Editing state
+        let currentConfigType = null;
+        let activeEditGroup = null;
+
+        // Slides state
+        let slides = []; 
+        let currentSlideIndex = 0;
+
+        // Fonts List
+        const availableFonts = ['Segoe UI', 'Ntr','Arial', 'Times New Roman', 'Pacifico', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Lobster', 'Gidugu', 'Ramabhadra'];
+
+        // --- FABRIC CANVAS INIT ---
+        const canvas = new fabric.Canvas('slideCanvas', {
+            width: BASE_WIDTH,
+            height: BASE_HEIGHT,
+            backgroundColor: '#ffffff',
+            selection: true
+        });
+
+        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+        canvas.freeDrawingBrush.width = 3;
+        canvas.freeDrawingBrush.color = "#ff0000";
+
+        // --- EDIT LOGIC ---
+        
+        function editSelectedObject() {
+            let target = canvas.getActiveObject();
+            if (!target) { alert("Please select an item to edit."); return; }
+            while (target && !target.customType && target.group) { target = target.group; }
+            if (target && target.customType) { openConfig(target.customType, target); } 
+            else { alert("This item is not editable via the configuration menu."); }
+        }
+
+        canvas.on('mouse:dblclick', function(e) {
+            let target = e.target;
+            if (!target) return;
+            while (target && !target.customType && target.group) { target = target.group; }
+            if (target && target.customType) { openConfig(target.customType, target); }
+        });
+
+        // --- MODAL & CONFIG LOGIC ---
+        function openConfig(type, existingGroup = null) {
+            currentConfigType = type;
+            activeEditGroup = existingGroup;
+            const modal = document.getElementById('configModal');
+            const title = document.getElementById('modalTitle');
+            const body = document.getElementById('modalBody');
+            
+            modal.style.display = 'flex';
+            body.innerHTML = ''; 
+
+            let data = existingGroup ? existingGroup.customData : null;
+            
+            // Default styles
+            const defFont = data && data.font ? data.font : 'Segoe UI';
+            const defColor = data && data.color ? data.color : '#333333';
+            const defAlign = data && data.align ? data.align : 'left';
+            const defSize = data && data.size ? data.size : 24;
+
+            // --- STYLE TOOLBAR HTML ---
+            let styleHtml = `
+            <div class="style-toolbar">
+                <select id="inpFont" title="Font Family">
+                    ${availableFonts.map(f => `<option value="${f}" ${f===defFont?'selected':''}>${f}</option>`).join('')}
+                </select>
+                <input type="color" id="inpColor" value="${defColor}" title="Text Color">
+                <select id="inpAlign" title="Alignment">
+                    <option value="left" ${defAlign==='left'?'selected':''}>Left</option>
+                    <option value="center" ${defAlign==='center'?'selected':''}>Center</option>
+                    <option value="right" ${defAlign==='right'?'selected':''}>Right</option>
+                    <option value="justify" ${defAlign==='justify'?'selected':''}>Justify</option>
+                </select>
+                <input type="number" id="inpSize" value="${defSize}" min="10" max="100" style="width:60px; margin:0;" title="Font Size">
+            </div>`;
+            
+            if (type !== 'math') { 
+                body.innerHTML = styleHtml; 
+            } else {
+                 body.innerHTML = `<div class="style-toolbar">
+                    <label style="width:auto; margin-right:10px;">Formula Color:</label>
+                    <input type="color" id="inpColor" value="${defColor}">
+                </div>`;
+            }
+
+            if (type === 'eduText') {
+                title.innerText = existingGroup ? "Edit Education Text" : "Add Education Text";
+                body.innerHTML += `
+                    <label>Content (Math supported via $...$):</label>
+                    <textarea id="inpText" rows="6">${data ? data.text : 'Enter educational content here...'}</textarea>
+                `;
+            }
+            else if (type === 'mcq') {
+                title.innerText = existingGroup ? "Edit MCQ" : "Add MCQ";
+                body.innerHTML += `
+                    <label>Question:</label>
+                    <textarea id="inpQ" rows="2">${data ? data.q : 'Question?'}</textarea>
+                    <label>Options (Math supported):</label>
+                    <textarea id="inpA" rows="1">${data ? data.o[0] : 'Option A'}</textarea>
+                    <textarea id="inpB" rows="1">${data ? data.o[1] : 'Option B'}</textarea>
+                    <textarea id="inpC" rows="1">${data ? data.o[2] : 'Option C'}</textarea>
+                    <textarea id="inpD" rows="1">${data ? data.o[3] : 'Option D'}</textarea>
+                `;
+            } 
+            else if (type === 'matching') {
+                title.innerText = existingGroup ? "Edit Matching" : "Add Matching";
+                const pairs = data ? data.pairs : [['A','1'], ['B','2'], ['C','3'], ['D','4']];
+                let html = '<label>Pairs (Math supported):</label>';
+                for(let i=0; i<4; i++) {
+                    html += `<div style="display:flex; gap:5px; margin-bottom:5px;">
+                        <textarea id="mL${i}" placeholder="Left">${pairs[i][0]}</textarea>
+                        <textarea id="mR${i}" placeholder="Right">${pairs[i][1]}</textarea>
+                    </div>`;
+                }
+                body.innerHTML += html;
+            } 
+            else if (type === 'table') {
+                title.innerText = existingGroup ? "Edit Table" : "Create Table";
+                if (existingGroup) {
+                    const rows = data.rows; const cols = data.cols; const cells = data.cells || [];
+                    let gridHtml = `<div class="table-grid-editor" style="grid-template-columns: repeat(${cols}, 1fr);">`;
+                    let cellIdx = 0;
+                    for(let r=0; r<rows; r++) {
+                        for(let c=0; c<cols; c++) {
+                            const val = cells[cellIdx] || '';
+                            gridHtml += `<textarea class="tbl-cell-inp">${val}</textarea>`;
+                            cellIdx++;
+                        }
+                    }
+                    gridHtml += `</div>`;
+                    body.innerHTML += `<label>Edit Cells (Math supported):</label>` + gridHtml +
+                        `<input type="hidden" id="inpRows" value="${rows}">` +
+                        `<input type="hidden" id="inpCols" value="${cols}">`;
+                } else {
+                    body.innerHTML += `
+                        <label>Rows:</label> <input type="number" id="inpRows" value="3" min="1" max="8">
+                        <label>Columns:</label> <input type="number" id="inpCols" value="3" min="1" max="5">
+                    `;
+                }
+            } 
+            else if (type === 'math') {
+                title.innerText = "Math Formula";
+                body.innerHTML += `
+                    <label>LaTeX Code:</label>
+                    <textarea id="inpMath" rows="3">${data ? data.latex : 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}'}</textarea>
+                `;
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('configModal').style.display = 'none';
+            currentConfigType = null;
+            activeEditGroup = null;
+        }
+
+        async function saveConfig() {
+            const btn = document.querySelector('#configModal .btn.primary');
+            const originalText = btn.innerText;
+            btn.innerText = "Rendering...";
+            
+            try {
+                let newData = {};
+                if(document.getElementById('inpFont')) newData.font = document.getElementById('inpFont').value;
+                if(document.getElementById('inpColor')) newData.color = document.getElementById('inpColor').value;
+                if(document.getElementById('inpAlign')) newData.align = document.getElementById('inpAlign').value;
+                if(document.getElementById('inpSize')) newData.size = parseInt(document.getElementById('inpSize').value);
+
+                if (currentConfigType === 'eduText') {
+                    newData.text = document.getElementById('inpText').value;
+                    await drawEduText(newData);
+                }
+                else if (currentConfigType === 'mcq') {
+                    newData.q = document.getElementById('inpQ').value;
+                    newData.o = [
+                        document.getElementById('inpA').value, document.getElementById('inpB').value,
+                        document.getElementById('inpC').value, document.getElementById('inpD').value
+                    ];
+                    await drawMCQ(newData);
+                } 
+                else if (currentConfigType === 'matching') {
+                    newData.pairs = [];
+                    for(let i=0; i<4; i++) {
+                        newData.pairs.push([ document.getElementById('mL'+i).value, document.getElementById('mR'+i).value ]);
+                    }
+                    await drawMatching(newData);
+                } 
+                else if (currentConfigType === 'table') {
+                    newData.rows = parseInt(document.getElementById('inpRows').value) || 3;
+                    newData.cols = parseInt(document.getElementById('inpCols').value) || 3;
+                    const inputs = document.querySelectorAll('.tbl-cell-inp');
+                    if (inputs.length > 0) {
+                        newData.cells = Array.from(inputs).map(inp => inp.value);
+                    } else {
+                        newData.cells = new Array(newData.rows * newData.cols).fill(" ");
+                    }
+                    await drawTable(newData);
+                }
+                else if (currentConfigType === 'math') {
+                    const latex = document.getElementById('inpMath').value;
+                    const color = document.getElementById('inpColor').value;
+                    await drawMath(latex, color);
+                }
+                closeModal();
+            } catch (e) {
+                alert("Error rendering: " + e.message);
+                console.error(e);
+            } finally {
+                btn.innerText = originalText;
+            }
+        }
+
+        // --- RENDERING HELPERS ---
+        function splitTextSmart(text) {
+            const lines = [];
+            let current = "";
+            let inMath = false;
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (c === '$') inMath = !inMath;
+                if (c === '\n' && !inMath) {
+                    lines.push(current);
+                    current = "";
+                } else {
+                    current += c;
+                }
+            }
+            if (current) lines.push(current);
+            return lines;
+        }
+
+        async function renderLine(text, fontSize, width, style) {
+            const font = style.font || 'Segoe UI';
+            const color = style.color || '#333';
+            const align = style.align || 'left';
+
+            const hasMath = text.includes('$');
+            if (hasMath) {
+                let latexStr = text;
+                const parts = text.split('$');
+                if(parts.length > 1) {
+                    latexStr = "";
+                    parts.forEach((part, idx) => {
+                        if(idx % 2 === 0) { 
+                            if(part.trim() !== "") {
+                                const escaped = part.replace(/([&%#_{}])/g, '\\$1');
+                                latexStr += `\\text{${escaped}} `; 
+                            }
+                        } 
+                        else { latexStr += `${part} `; }
+                    });
+                }
+                try {
+                    const svg = await MathJax.tex2svgPromise(latexStr);
+                    const svgStr = svg.querySelector('svg').outerHTML;
+                    return new Promise((resolve) => {
+                        fabric.loadSVGFromString(svgStr, (objects, options) => {
+                            const obj = fabric.util.groupSVGElements(objects, options);
+                            obj.getObjects().forEach(o => o.set('fill', color));
+                            const desiredH = fontSize * 1.5; 
+                            const scale = desiredH / obj.height;
+                            obj.scale(scale);
+                            if (obj.width * obj.scaleX > width) obj.scaleToWidth(width);
+                            resolve(obj);
+                        });
+                    });
+                } catch(e) {
+                    return new fabric.Textbox(text + " (Error)", { fontSize: fontSize, width: width, fill: 'red' });
+                }
+            } else {
+                return new fabric.Textbox(text, { 
+                    fontSize: fontSize, width: width, 
+                    splitByGrapheme: false, 
+                    fontFamily: font, fill: color, textAlign: align
+                });
+            }
+        }
+
+        async function renderBlock(text, fontSize, width, style) {
+            const lines = splitTextSmart(text);
+            const objects = [];
+            let currentY = 0;
+            let maxW = 0;
+
+            for (const line of lines) {
+                if (!line.trim()) { currentY += fontSize; continue; }
+                const obj = await renderLine(line, fontSize, width, style);
+                obj.set({ originX: 'left', originY: 'top', left: 0, top: currentY });
+                objects.push(obj);
+                const objH = obj.height * obj.scaleY;
+                const objW = obj.width * obj.scaleX;
+                currentY += objH + 8; 
+                if (objW > maxW) maxW = objW;
+            }
+            return new fabric.Group(objects, { originX: 'left', originY: 'top' });
+        }
+
+        // --- COMPONENT DRAWING ---
+
+        async function drawEduText(data) {
+            let t = 50, l = 50;
+            if (activeEditGroup) { t = activeEditGroup.top; l = activeEditGroup.left; canvas.remove(activeEditGroup); }
+            const style = { font: data.font, color: data.color, align: data.align };
+            const group = await renderBlock(data.text, data.size || 24, 700, style);
+            group.set({ top: t, left: l });
+            group.customType = 'eduText'; group.customData = data;
+            finishObject(group);
+        }
+
+        async function drawMCQ(data) {
+            let t = 50, l = 50;
+            if (activeEditGroup) { t = activeEditGroup.top; l = activeEditGroup.left; canvas.remove(activeEditGroup); }
+            const style = { font: data.font, color: data.color, align: data.align };
+            const qObj = await renderBlock(data.q, data.size || 24, 600, style);
+            qObj.set({ top: 0, left: 0 });
+            const objects = [qObj];
+            let currentTop = (qObj.height * qObj.scaleY) + 25;
+            for(let i=0; i<data.o.length; i++) {
+                const circle = new fabric.Circle({ radius: 8, fill: 'transparent', stroke: style.color || '#333', strokeWidth: 2, top: currentTop + 5, left: 0 });
+                const optObj = await renderBlock(data.o[i], (data.size || 24) * 0.8, 550, style);
+                optObj.set({ top: currentTop, left: 30 });
+                objects.push(circle, optObj);
+                currentTop += Math.max((optObj.height * optObj.scaleY), 30) + 15;
+            }
+            const group = new fabric.Group(objects, { top: t, left: l });
+            group.customType = 'mcq'; group.customData = data;
+            finishObject(group);
+        }
+
+        async function drawMatching(data) {
+            let t = 50, l = 50;
+            if (activeEditGroup) { t = activeEditGroup.top; l = activeEditGroup.left; canvas.remove(activeEditGroup); }
+            const style = { font: data.font, color: data.color, align: data.align };
+            const objects = [];
+            let currentTop = 0;
+            for(let i=0; i<data.pairs.length; i++) {
+                const lObj = await renderBlock(data.pairs[i][0], (data.size || 24) * 0.8, 150, style);
+                const rObj = await renderBlock(data.pairs[i][1], (data.size || 24) * 0.8, 150, style);
+                const hL = lObj.height * lObj.scaleY;
+                const hR = rObj.height * rObj.scaleY;
+                const rowH = Math.max(hL, hR, 30);
+                lObj.set({ top: currentTop + (rowH - hL)/2, left: 0 });
+                rObj.set({ top: currentTop + (rowH - hR)/2, left: 270 });
+                const dotY = currentTop + rowH/2 - 2;
+                const dotL = new fabric.Circle({ radius: 4, fill: style.color || '#333', top: dotY, left: 160 });
+                const dotR = new fabric.Circle({ radius: 4, fill: style.color || '#333', top: dotY, left: 250 });
+                objects.push(lObj, dotL, dotR, rObj);
+                currentTop += rowH + 20;
+            }
+            const group = new fabric.Group(objects, { top: t, left: l });
+            group.customType = 'matching'; group.customData = data;
+            finishObject(group);
+        }
+
+        async function drawTable(data) {
+            let t = 50, l = 50;
+            if (activeEditGroup) { t = activeEditGroup.top; l = activeEditGroup.left; canvas.remove(activeEditGroup); }
+            const style = { font: data.font, color: data.color, align: data.align };
+            const cellW = 150; const minCellH = 50; 
+            const objects = [];
+            let cellIdx = 0;
+            let rowHeights = [];
+            let renderedCells = []; 
+            for(let r=0; r<data.rows; r++){
+                let maxH = minCellH;
+                renderedCells[r] = [];
+                for(let c=0; c<data.cols; c++){
+                    const contentText = data.cells[cellIdx] || " ";
+                    const contentObj = await renderBlock(contentText, (data.size || 24) * 0.75, cellW-10, style);
+                    renderedCells[r][c] = contentObj;
+                    const h = contentObj.height * contentObj.scaleY;
+                    if (h + 20 > maxH) maxH = h + 20;
+                    cellIdx++;
+                }
+                rowHeights.push(maxH);
+            }
+            let currentY = 0;
+            for(let r=0; r<data.rows; r++){
+                let h = rowHeights[r];
+                for(let c=0; c<data.cols; c++){
+                    const rect = new fabric.Rect({ width: cellW, height: h, fill: 'transparent', stroke: style.color || '#333', strokeWidth:1, top: currentY, left: c*cellW });
+                    const obj = renderedCells[r][c];
+                    const objH = obj.height * obj.scaleY;
+                    const objW = obj.width * obj.scaleX;
+                    obj.set({ top: currentY + (h - objH)/2, left: c*cellW + (cellW - objW)/2 });
+                    objects.push(rect, obj);
+                }
+                currentY += h;
+            }
+            const group = new fabric.Group(objects, { top: t, left: l });
+            group.customType = 'table'; group.customData = data;
+            finishObject(group);
+        }
+
+        async function drawMath(latex, color) {
+            let t = 100, l = 100;
+            if (activeEditGroup) { t = activeEditGroup.top; l = activeEditGroup.left; canvas.remove(activeEditGroup); } 
+            const svg = await MathJax.tex2svgPromise(latex);
+            const svgStr = svg.querySelector('svg').outerHTML;
+            return new Promise((resolve) => {
+                fabric.loadSVGFromString(svgStr, (objects, options) => {
+                    const mathObj = fabric.util.groupSVGElements(objects, options);
+                    mathObj.getObjects().forEach(o => o.set('fill', color));
+                    const targetH = 30;
+                    if (mathObj.height > 0) {
+                        const scale = targetH / mathObj.height;
+                        mathObj.scale(scale);
+                    }
+                    mathObj.set({ left: l, top: t });
+                    mathObj.customType = 'math';
+                    mathObj.customData = { latex: latex, color: color };
+                    finishObject(mathObj);
+                    resolve();
+                });
+            });
+        }
+
+        function finishObject(group) {
+            if (!activeEditGroup && group.width > BASE_WIDTH * 0.95) {
+                group.scaleToWidth(BASE_WIDTH * 0.95);
+            }
+            canvas.add(group); 
+            canvas.centerObject(group); 
+            canvas.setActiveObject(group); 
+            canvas.requestRenderAll();
+        }
+
+        function reviveMathObjects() {
+            const objects = canvas.getObjects();
+            objects.forEach(async (obj) => {
+                if ((obj.customType === 'math' || obj.customType === 'eduText' || obj.customType === 'mcq' || obj.customType === 'matching' || obj.customType === 'table') && obj.customData) {
+                    // This triggers a refresh of SVG elements inside groups if necessary
+                }
+            });
+        }
+
+        // --- TOOLS ---
+        function addRect() { const rect = new fabric.Rect({ left: 100, top: 100, fill: '#4f46e5', width: 100, height: 100 }); canvas.add(rect); canvas.setActiveObject(rect); }
+        function addCircle() { const circle = new fabric.Circle({ left: 200, top: 200, fill: '#ec4899', radius: 50 }); canvas.add(circle); canvas.setActiveObject(circle); }
+        function addTriangle() { const triangle = new fabric.Triangle({ left: 300, top: 150, fill: '#f59e0b', width: 100, height: 100 }); canvas.add(triangle); canvas.setActiveObject(triangle); }
+        function addText() { const text = new fabric.IText('Simple Text', { left: 100, top: 100, fontFamily: 'Arial', fill: '#333333', fontSize: 30 }); canvas.add(text); canvas.centerObject(text); canvas.setActiveObject(text); }
+        function setVintageBg() { canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas)); const pattern = new fabric.Gradient({ type: 'radial', coords: { r1: 0, r2: BASE_WIDTH, x1: BASE_WIDTH/2, y1: BASE_HEIGHT/2, x2: BASE_WIDTH/2, y2: BASE_HEIGHT/2 }, colorStops: [{ offset: 0, color: '#06402B' }, { offset: 1, color: '#06402B' }] }); canvas.setBackgroundColor(pattern, canvas.renderAll.bind(canvas)); }
+        function setRuledBg() { canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas)); const svg = `<svg width="40" height="25" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="25" fill="white"/><line x1="0" y1="24" x2="40" y2="24" stroke="#94a3b8" stroke-width="1"/></svg>`; const img = new Image(); img.src = 'data:image/svg+xml;base64,' + btoa(svg); img.onload = function() { const pattern = new fabric.Pattern({ source: img, repeat: 'repeat' }); canvas.setBackgroundColor(pattern, canvas.renderAll.bind(canvas)); } }
+        function setSolidBg(c) { canvas.setBackgroundImage(null,()=>canvas.renderAll()); canvas.setBackgroundColor(c,()=>canvas.renderAll()); }
+        function setBgImage(i) { const f=i.files[0]; if(!f)return; const r=new FileReader(); r.onload=e=>{ fabric.Image.fromURL(e.target.result, img=>{ const s = Math.max(BASE_WIDTH/img.width, BASE_HEIGHT/img.height); canvas.setBackgroundImage(img, ()=>canvas.renderAll(), { scaleX:s, scaleY:s, originX:'left', originY:'top'}); })}; r.readAsDataURL(f); i.value=''; }
+        function addObjImage(i) { const f=i.files[0]; if(!f)return; const r=new FileReader(); r.onload=e=>{ fabric.Image.fromURL(e.target.result, img=>{ img.scaleToWidth(200); canvas.add(img); canvas.centerObject(img); })}; r.readAsDataURL(f); i.value=''; }
+        function deleteObject() { const o = canvas.getActiveObject(); if(o) canvas.remove(o); }
+
+        // --- SLIDE LOGIC ---
+        function saveProject() { saveCurrentState(); const dataStr = JSON.stringify(slides); const blob = new Blob([dataStr], {type: "application/json"}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = "presentation.json"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+        function loadProject(input) { const file = input.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = function(e) { try { const loadedSlides = JSON.parse(e.target.result); if(Array.isArray(loadedSlides)) { slides = loadedSlides; currentSlideIndex = 0; loadSlide(0); setTimeout(() => alert("Loaded!"), 200); } else { alert("Invalid file."); } } catch(err) { alert("Error reading file."); } }; reader.readAsText(file); input.value = ''; }
+        function saveCurrentState() { slides[currentSlideIndex] = JSON.stringify(canvas.toJSON(['customType', 'customData', 'isInk'])); }
+        function loadSlide(index) { 
+            currentSlideIndex = index; 
+            const json = slides[index]; 
+            canvas.setZoom(1); canvas.setDimensions({ width: BASE_WIDTH, height: BASE_HEIGHT }); canvas.clear(); 
+            if (json) { canvas.loadFromJSON(json, function() { resizeCanvas(); if(isPresentationMode) { canvas.selection = false; canvas.forEachObject(o => o.selectable = false); } canvas.renderAll(); }); } 
+            else { canvas.setBackgroundColor('#ffffff'); resizeCanvas(); } 
+            document.getElementById('slideCounter').innerText = `${currentSlideIndex + 1} / ${slides.length}`; 
+            inkHistory = []; inkRedoStack = []; 
+        }
+        function addNewSlide() { saveCurrentState(); slides.push(null); loadSlide(slides.length - 1); }
+        function nextSlide() { if (currentSlideIndex < slides.length - 1) { saveCurrentState(); loadSlide(currentSlideIndex + 1); } }
+        function prevSlide() { if (currentSlideIndex > 0) { saveCurrentState(); loadSlide(currentSlideIndex - 1); } }
+
+        // --- PRESENTATION & RECORDING ---
+        async function toggleRecording() {
+            const btn = document.getElementById('btnRec'); const toggle = document.getElementById('presentToggle');
+            if (!isRecording) {
+                try {
+                    const canvasStream = document.querySelector('canvas').captureStream(30);
+                    let audioStream; try { audioStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { alert("Mic unavailable."); }
+                    const tracks = [...canvasStream.getVideoTracks(), ...(audioStream ? audioStream.getAudioTracks() : [])];
+                    const combinedStream = new MediaStream(tracks);
+                    let options = { mimeType: 'video/webm;codecs=vp9' }; if (MediaRecorder.isTypeSupported('video/mp4')) options = { mimeType: 'video/mp4' };
+                    mediaRecorder = new MediaRecorder(combinedStream, options);
+                    recordedChunks = [];
+                    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                    mediaRecorder.onstop = saveRecording;
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.classList.add('recording'); btn.innerText = "⬛"; toggle.classList.add('recording');
+                    recordingLoop();
+                } catch (err) { alert("Recording failed: " + err.message); }
+            } else {
+                mediaRecorder.stop(); isRecording = false;
+                btn.classList.remove('recording'); btn.innerText = "🔴"; toggle.classList.remove('recording');
+            }
+        }
+        function recordingLoop() { if (isRecording) { canvas.renderAll(); requestAnimationFrame(recordingLoop); } }
+        function saveRecording() { const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `presentation.${mediaRecorder.mimeType.includes("mp4") ? "mp4" : "webm"}`; document.body.appendChild(a); a.click(); }
+
+        function togglePresentationBar() { const bar = document.getElementById('presentationBar'); const toggleBtn = document.getElementById('presentToggle'); if (bar.style.display === 'none' || bar.style.display === '') { bar.style.display = 'flex'; toggleBtn.classList.add('active'); } else { bar.style.display = 'none'; toggleBtn.classList.remove('active'); } }
+        function setPenMode(mode) { isEraserActive = false; canvas.isDrawingMode = true; canvas.discardActiveObject(); canvas.requestRenderAll(); const color = document.getElementById('presentPenColor').value; const size = document.querySelector('.pen-slider').value; canvas.freeDrawingBrush = new fabric.PencilBrush(canvas); canvas.freeDrawingBrush.width = parseInt(size, 10); canvas.freeDrawingBrush.color = color; if (mode === 'cursive') canvas.freeDrawingBrush.shadow = new fabric.Shadow({ blur: 3, offsetX: 3, offsetY: 3, color: 'rgba(0,0,0,0.2)' }); }
+        function setEraserMode() { canvas.isDrawingMode = false; isEraserActive = true; canvas.defaultCursor = 'crosshair'; }
+        canvas.on('mouse:move', function(e) { if(isEraserActive && e.target && e.target.isInk) { canvas.remove(e.target); } });
+        function updatePenSize(val) { if(canvas.freeDrawingBrush) canvas.freeDrawingBrush.width = parseInt(val, 10); }
+        function changePenColor(hex) { if (canvas.freeDrawingBrush) canvas.freeDrawingBrush.color = hex; }
+        canvas.on('path:created', function(e) { if(isPresentationMode) { e.path.isInk = true; inkHistory.push(e.path); inkRedoStack = []; } });
+        function undoInk() { if(inkHistory.length > 0) { const lastPath = inkHistory.pop(); inkRedoStack.push(lastPath); canvas.remove(lastPath); canvas.renderAll(); } }
+        function redoInk() { if(inkRedoStack.length > 0) { const path = inkRedoStack.pop(); inkHistory.push(path); canvas.add(path); canvas.renderAll(); } }
+        function startPresentation() { saveCurrentState(); isPresentationMode = true; document.body.classList.add('presentation-mode'); canvas.selection = false; canvas.forEachObject(o => o.selectable = false); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(e => {}); document.getElementById('presentationBar').style.display = 'flex'; document.getElementById('presentToggle').classList.add('active'); resizeCanvas(); }
+        function endPresentation() { if(isRecording) toggleRecording(); isPresentationMode = false; document.body.classList.remove('presentation-mode'); canvas.selection = true; canvas.forEachObject(o => o.selectable = true); if (document.fullscreenElement) document.exitFullscreen(); document.getElementById('presentationBar').style.display = 'none'; document.getElementById('presentToggle').classList.remove('active'); resizeCanvas(); }
+
+        function resizeCanvas() { const canvasArea = document.getElementById('canvasArea'); let availableWidth = isPresentationMode ? window.innerWidth : canvasArea.clientWidth - 20; let availableHeight = isPresentationMode ? window.innerHeight : canvasArea.clientHeight - 20; const scale = Math.min(availableWidth / BASE_WIDTH, availableHeight / BASE_HEIGHT); canvas.setDimensions({ width: BASE_WIDTH * scale, height: BASE_HEIGHT * scale }); canvas.setZoom(scale); canvas.renderAll(); }
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); setTimeout(resizeCanvas, 350); }
+        
+        window.addEventListener('resize', resizeCanvas);
+        if (window.innerWidth < 768) document.getElementById('sidebar').classList.add('hidden');
+        slides[0] = JSON.stringify(canvas.toJSON());
+        setTimeout(resizeCanvas, 100);
+    </script>
+</body>
+</html>
